@@ -2,6 +2,7 @@
 'use strict';
 const CFG=window.DCM_ACTION_SYNC||{}, REASONS=window.DCM_ACTION_REASONS||{};
 const ACTION_KEY='dcm-dashboard-v10-actions';
+const DATA_KEY='dcm-dashboard-v8-data';
 const EDITOR_KEY='dcm-action-sync-editor';
 const TOKEN_KEY='dcm-action-sync-key';
 const REMOTE_HASH_KEY='dcm-action-sync-last-remote';
@@ -14,6 +15,11 @@ function token(){return localStorage.getItem(TOKEN_KEY)||'';}
 function editor(){return localStorage.getItem(EDITOR_KEY)||CFG.editors?.[0]||'';}
 function hash(v){try{return JSON.stringify(v||[]);}catch(e){return ''}}
 function getLocalActions(){try{const x=JSON.parse(localStorage.getItem(ACTION_KEY));return Array.isArray(x)?x:[];}catch(e){return []}}
+function getData(){try{const x=JSON.parse(localStorage.getItem(DATA_KEY));if(Array.isArray(x)&&x.length)return x;}catch(e){}try{return JSON.parse(JSON.stringify(window.DCM_BASE_DATA||[]));}catch(e){return []}}
+function rowKey(r){return `${r.outlet}|||${r.businessNo}`;}
+function months(data){return [...new Set(data.map(r=>r.month).filter(Boolean))].sort();}
+function currentMonth(data){return $('month')?.value||months(data).slice(-1)[0]||null;}
+function scoped(data,m){const manager=$('manager')?.value||'전체',outlet=$('outlet')?.value||'전체';return data.filter(r=>r.month===m&&(manager==='전체'||r.manager===manager)&&(outlet==='전체'||r.outlet===outlet));}
 function setStatus(text,state='idle',meta){const el=$('ctSyncStatus');if(!el)return;el.className=`ct-sync-status ${state}`;el.textContent=text;if(meta){lastMeta=meta;const m=$('ctSyncMeta');if(m)m.textContent=meta;}}
 function installUI(){
  const board=[...document.querySelectorAll('.ct-panel')].find(x=>x.querySelector('h2')?.textContent.includes('Action Board'));
@@ -34,26 +40,27 @@ function syncReasonOptions(){
    if(sel.dataset.reasonSource!=='github'){sel.innerHTML=html;sel.dataset.reasonSource='github';sel.value=cur;}
  });
 }
-function collectBoardRows(){
+function allRiskRows(){
+ const L=window.DCMLogic;if(!L)return [];
+ const E=L.E||[],data=getData(),cur=currentMonth(data);if(!cur)return [];
+ const ms=months(data),idx=ms.indexOf(cur),prev=idx>0?ms[idx-1]:null,curr=scoped(data,cur),prior=prev?scoped(data,prev):[];
+ const pmap=new Map(prior.map(r=>[rowKey(r),r])),ch=L.compare(prior,curr),o2x=new Set((ch.oToX||[]).map(x=>`${x.outlet}|||${x.businessNo}|||${x.entity}`)),currentKeys=new Set(curr.map(rowKey));
+ const by=new Map();data.filter(r=>ms.includes(r.month)&&r.month<=cur).forEach(r=>{const k=rowKey(r);if(!by.has(k))by.set(k,{});by.get(k)[r.month]=r;});
  const localMap=new Map(getLocalActions().map(a=>[a.key,a]));
- const rows=[];
- document.querySelectorAll('#ctActionBody tr').forEach(tr=>{
-   const keyed=tr.querySelector('[data-key]');if(!keyed)return;
-   const k=keyed.dataset.key,cells=tr.querySelectorAll('td');if(!k||cells.length<9)return;
+ const out=[];
+ by.forEach(hist=>{
+   const r=hist[cur],k=r&&rowKey(r);if(!r||!currentKeys.has(k)||!E.some(e=>L.normStatus(r.statuses?.[e])==='X'))return;
+   const entityStreak={};let streak=0,score=0,xCount=0;
+   E.forEach(e=>{let n=0;for(let i=ms.length-1;i>=0;i--){if(L.normStatus(hist[ms[i]]?.statuses?.[e])==='X')n++;else break;}entityStreak[e]=n;streak=Math.max(streak,n);if(L.normStatus(r.statuses?.[e])!=='X')return;xCount++;score+=2;if(n>=2)score+=3*Math.min(n-1,3);if(o2x.has(`${r.outlet}|||${r.businessNo}|||${e}`))score+=4;if(!L.normStatus(pmap.get(k)?.statuses?.[e]))score+=2;});
    const existing=localMap.get(k)||{};
-   const reason=tr.querySelector('[data-field="reasonCode"]')?.value??existing.reasonCode??'';
-   const plan=tr.querySelector('[data-field="plan"]')?.value??existing.plan??'';
-   const due=tr.querySelector('[data-field="dueDate"]')?.value??existing.dueDate??'';
-   const status=tr.querySelector('[data-field="status"]')?.value??existing.status??'TODO';
-   const parts=k.split('|||');
-   rows.push({...existing,key:k,outlet:cells[2]?.innerText.trim()||parts[0]||'',businessNo:existing.businessNo||parts[1]||'',priority:cells[0]?.innerText.trim()||'',businessName:cells[1]?.innerText.trim()||'',manager:cells[3]?.innerText.trim()||'',aging:cells[4]?.innerText.trim()||'',reasonCode:reason,plan:plan,dueDate:due,status:status,modifiedBy:existing.modifiedBy||editor()});
+   out.push({...existing,key:k,outlet:r.outlet||'',businessNo:r.businessNo||'',priority:score>=12?'P1':score>=7?'P2':'P3',businessName:r.businessName||'',manager:r.manager||'',aging:`${streak}M`,reasonCode:existing.reasonCode||'',plan:existing.plan||'',dueDate:existing.dueDate||'',status:existing.status||'TODO',modifiedBy:existing.modifiedBy||editor(),score,xCount});
  });
- return rows;
+ return out.sort((a,b)=>b.score-a.score||b.xCount-a.xCount||String(a.businessName).localeCompare(String(b.businessName),'ko'));
 }
 function observeBoard(){
- const root=$('ctActionBody');if(!root)return;
- const obs=new MutationObserver(()=>{syncReasonOptions();scheduleRiskSnapshot(700);});
- obs.observe(root,{childList:true,subtree:true});syncReasonOptions();scheduleRiskSnapshot(900);
+ const root=$('ctActionBody');if(root){const obs=new MutationObserver(()=>syncReasonOptions());obs.observe(root,{childList:true,subtree:true});}
+ syncReasonOptions();
+ ['manager','outlet','month'].forEach(id=>$(id)?.addEventListener('change',()=>scheduleRiskSnapshot(700)));
 }
 function enrichActions(actions){
  const rows={};document.querySelectorAll('#ctActionBody tr').forEach(tr=>{const sel=tr.querySelector('[data-key]');if(!sel)return;const cells=tr.querySelectorAll('td');if(cells.length<9)return;rows[sel.dataset.key]={priority:cells[0]?.innerText.trim()||'',businessName:cells[1]?.innerText.trim()||'',outlet:cells[2]?.innerText.trim()||'',manager:cells[3]?.innerText.trim()||'',aging:cells[4]?.innerText.trim()||''};});
@@ -70,13 +77,13 @@ async function pushLocal(actions){
 }
 async function pushRiskSnapshot(){
  if(!endpoint()||!token())return;
- const snapshot=collectBoardRows();if(!snapshot.length)return;
+ const snapshot=allRiskRows();if(!snapshot.length)return;
  try{
-   setStatus('Risk 목록 동기화 중…','working');
+   setStatus('전체 Risk 동기화 중…','working');
    const json=await post({type:'save',editor:editor(),actions:snapshot,reasons:REASONS});
    const meta=json.updatedAt?`마지막 수정: ${json.updatedBy||editor()} · ${new Date(json.updatedAt).toLocaleString('ko-KR')}`:`Risk ${snapshot.length}건 동기화`;
-   setStatus(`Risk ${snapshot.length}건 동기화 ✓`,'ok',meta);
- }catch(e){console.warn('[DCM Action Sync] risk snapshot failed',e);setStatus('Risk 목록 Sync 실패','error',e.message);}
+   setStatus(`전체 Risk ${snapshot.length}건 동기화 ✓`,'ok',meta);
+ }catch(e){console.warn('[DCM Action Sync] risk snapshot failed',e);setStatus('전체 Risk Sync 실패','error',e.message);}
 }
 function scheduleRiskSnapshot(delay=700){if(snapshotTimer)clearTimeout(snapshotTimer);snapshotTimer=setTimeout(()=>pushRiskSnapshot(),delay);}
 async function pullRemote(force=false){
@@ -99,5 +106,5 @@ async function pullRemote(force=false){
 Storage.prototype.setItem=function(k,v){originalSetItem.call(this,k,v);if(this===localStorage&&k===ACTION_KEY&&!suppressSync){try{const a=JSON.parse(v);if(Array.isArray(a))setTimeout(()=>pushLocal(a),0);}catch(e){}}};
 function start(){installUI();observeBoard();pullRemote(false).then(()=>scheduleRiskSnapshot(1200));if(pollTimer)clearInterval(pollTimer);pollTimer=setInterval(()=>pullRemote(false),Number(CFG.pollMs)||60000);}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(start,100),{once:true});else setTimeout(start,100);
-window.DCMActionSync={pull:()=>pullRemote(true),push:()=>pushLocal(getLocalActions()),pushRisk:()=>pushRiskSnapshot(),reasons:REASONS};
+window.DCMActionSync={pull:()=>pullRemote(true),push:()=>pushLocal(getLocalActions()),pushRisk:()=>pushRiskSnapshot(),allRisk:()=>allRiskRows(),reasons:REASONS};
 })();
