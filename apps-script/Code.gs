@@ -60,7 +60,18 @@ function assertToken_(token) {
 }
 
 function loadActions_() {
-  const sh = SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_SHEET);
+  const ss = SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
+  const sh = ss.getSheetByName(DCM_SHEET);
+  const hist = ss.getSheetByName(DCM_HISTORY_SHEET);
+  const historyMap = {};
+  if (hist && hist.getLastRow() >= 2) {
+    hist.getRange(2,1,hist.getLastRow()-1,11).getDisplayValues().forEach(r => {
+      const key = r[1]; if (!key) return;
+      if (!historyMap[key]) historyMap[key] = [];
+      historyMap[key].push({at:r[10] || '', field:r[6] || '', value:r[8] || '', by:r[9] || '', previous:r[7] || ''});
+    });
+    Object.keys(historyMap).forEach(k => historyMap[k] = historyMap[k].slice(-50).reverse());
+  }
   const last = sh.getLastRow();
   if (last < 2) return {actions:[], updatedBy:'', updatedAt:''};
   const values = sh.getRange(2,1,last-1,13).getDisplayValues();
@@ -84,7 +95,7 @@ function loadActions_() {
       status:statusCode_(r[10]),
       modifiedBy:r[11] || '',
       updatedAt:r[12] || '',
-      history:[]
+      history:historyMap[key] || []
     });
   });
   return {actions:actions, updatedBy:latestBy, updatedAt:latestAt};
