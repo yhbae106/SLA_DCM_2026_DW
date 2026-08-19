@@ -1,5 +1,5 @@
 window.DCM_ACTION_SYNC={
-  endpoint:'',
+  endpoint:'https://script.google.com/macros/s/AKfycbygUlCo1x2izUO59cdbbBL3pbGLZgMaGrZz2lrqDfB8m4VtUHC-VqnEJMOeiQOUPXWCuQ/exec',
   spreadsheetId:'1LbEuintnEZbnwJXZcrbTWZNECWMg4ry7_UwRsQ9end0',
   sheetName:'Action Board',
   editors:['배영훈','정직한','임인숙'],
