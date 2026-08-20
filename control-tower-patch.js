@@ -3,7 +3,7 @@
 const DATA_KEY='dcm-dashboard-v8-data',ACTION_KEY='dcm-dashboard-v10-actions';
 const PAGE_SIZE=50;
 const $=id=>document.getElementById(id);
-const esc=v=>String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+const esc=v=>String(v??'').replace(/[&<>'\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]));
 const statusLabel=s=>({TODO:'미조치',IN_PROGRESS:'진행중',WAITING:'업체회신',DONE:'완료'})[s]||'미조치';
 let actionOpen=false,actionLimit=PAGE_SIZE,actionTimer=null;
 function installLayout(){
@@ -93,7 +93,7 @@ function renderAllXActionBoard(){
 function scheduleActionRender(delay=100){clearTimeout(actionTimer);actionTimer=setTimeout(()=>{if(actionOpen)renderAllXActionBoard();else clearActionRows();},delay);}
 function installAllXBoard(){
   const tbody=$('ctActionBody');if(!tbody)return;ensureActionControls();
-  const obs=new MutationObserver(()=>{if(tbody.dataset.allXRendering==='1')return;if(actionOpen)scheduleActionRender(80);else clearActionRows();});obs.observe(tbody,{childList:true,subtree:true});
+  const obs=new MutationObserver(()=>{if(tbody.dataset.allXRendering==='1')return;if(actionOpen)scheduleActionRender(80);else clearActionRows();});obs.observe(tbody,{childList:true});
   ['manager','outlet','month'].forEach(id=>$(id)?.addEventListener('change',()=>{actionLimit=PAGE_SIZE;scheduleActionRender(140);}));
   window.addEventListener('dcm-action-sync-applied',()=>scheduleActionRender(80));
 }
