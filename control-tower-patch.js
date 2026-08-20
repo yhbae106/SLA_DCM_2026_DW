@@ -60,10 +60,7 @@ function ensureActionControls(){
   }
   clearActionRows();
 }
-function clearActionRows(){
-  const tbody=$('ctActionBody');if(!tbody)return;
-  tbody.dataset.allXRendering='1';tbody.innerHTML='';delete tbody.dataset.allXRendering;
-}
+function clearActionRows(){const tbody=$('ctActionBody');if(tbody)tbody.innerHTML='';}
 function openActionBoard(){
   actionOpen=true;actionLimit=PAGE_SIZE;
   const panel=$('ctAction');panel?.classList.remove('ct-action-collapsed');panel?.classList.add('ct-action-open');
@@ -83,17 +80,14 @@ function renderAllXActionBoard(){
   if(head&&!head.dataset.allX){head.dataset.allX='1';head.innerHTML='<th>Priority</th><th>Score</th><th>실사업자명</th><th>업체/권역</th><th>담당자</th><th>Aging</th><th>원인</th><th>조치계획</th><th>Due</th><th>상태</th>';}
   const panel=tbody.closest('.ct-panel'),desc=panel?.querySelector('.section-head p');if(desc)desc.textContent=`현재 필터 범위에서 X가 하나라도 있는 전체 거래처 ${rows.length}건 · Risk Score 높은 순`;
   const reasons=window.DCM_ACTION_REASONS||{};
-  tbody.dataset.allXRendering='1';
   tbody.innerHTML=visible.map(r=>`<tr><td><span class="ct-priority ct-${String(r.priority||'P3').toLowerCase()}">${esc(r.priority||'P3')}</span></td><td><strong>${Number(r.score)||0}</strong></td><td>${esc(r.businessName||'')}</td><td>${esc(r.outlet||'')}</td><td>${esc(r.manager||'')}</td><td>${esc(r.aging||'')}</td><td><select data-allx-field="reasonCode" data-key="${esc(r.key)}"><option value="">원인 선택</option>${Object.entries(reasons).map(([k,v])=>`<option value="${esc(k)}" ${r.reasonCode===k?'selected':''}>${esc(k)} ${esc(v)}</option>`).join('')}</select></td><td><input type="text" data-allx-field="plan" data-key="${esc(r.key)}" value="${esc(r.plan||'')}" placeholder="조치계획"></td><td><input type="date" data-allx-field="dueDate" data-key="${esc(r.key)}" value="${esc(r.dueDate||'')}"></td><td><select data-allx-field="status" data-key="${esc(r.key)}">${['TODO','IN_PROGRESS','WAITING','DONE'].map(s=>`<option value="${s}" ${(r.status||'TODO')===s?'selected':''}>${statusLabel(s)}</option>`).join('')}</select></td></tr>`).join('')||'<tr><td colspan="10" class="empty">현재 필터 범위에 X 거래처가 없습니다.</td></tr>';
-  delete tbody.dataset.allXRendering;
   tbody.querySelectorAll('[data-allx-field]').forEach(el=>el.addEventListener('change',()=>saveBoardField(el.dataset.key,el.dataset.allxField,el.value)));
   const shown=$('ctActionShown'),more=$('ctActionMore'),all=$('ctActionAll');if(shown)shown.textContent=`${Math.min(visible.length,rows.length)} / ${rows.length}건 표시`;
   if(more)more.hidden=visible.length>=rows.length;if(all)all.hidden=visible.length>=rows.length;
 }
-function scheduleActionRender(delay=100){clearTimeout(actionTimer);actionTimer=setTimeout(()=>{if(actionOpen)renderAllXActionBoard();else clearActionRows();},delay);}
+function scheduleActionRender(delay=100){clearTimeout(actionTimer);actionTimer=setTimeout(()=>{if(actionOpen)renderAllXActionBoard();},delay);}
 function installAllXBoard(){
   const tbody=$('ctActionBody');if(!tbody)return;ensureActionControls();
-  const obs=new MutationObserver(()=>{if(tbody.dataset.allXRendering==='1')return;if(actionOpen)scheduleActionRender(80);else clearActionRows();});obs.observe(tbody,{childList:true});
   ['manager','outlet','month'].forEach(id=>$(id)?.addEventListener('change',()=>{actionLimit=PAGE_SIZE;scheduleActionRender(140);}));
   window.addEventListener('dcm-action-sync-applied',()=>scheduleActionRender(80));
 }
