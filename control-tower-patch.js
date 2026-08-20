@@ -8,32 +8,53 @@ const statusLabel=s=>({TODO:'미조치',IN_PROGRESS:'진행중',WAITING:'업체�
 let actionOpen=false,actionLimit=PAGE_SIZE,actionTimer=null;
 function installLayout(){
   if(!document.querySelector('link[href^="control-tower-layout.css"]')){
-    const link=document.createElement('link');link.rel='stylesheet';link.href='control-tower-layout.css?v=3';document.head.appendChild(link);
+    const link=document.createElement('link');link.rel='stylesheet';link.href='control-tower-layout.css?v=4';document.head.appendChild(link);
   }
   const main=document.querySelector('main.wrap'),filters=main?.querySelector('.filters'),hero=main?.querySelector('.ct-hero'),top=main?.querySelector('.top');
   if(!main||!filters||!hero)return;
   if(top&&top.nextElementSibling!==hero)top.insertAdjacentElement('afterend',hero);
   hero.insertAdjacentElement('afterend',filters);filters.classList.add('ct-compact-filters');
-  if(!document.getElementById('ctQuickNav')){
-    const nav=document.createElement('div');nav.id='ctQuickNav';nav.className='ct-quick-nav';
-    nav.innerHTML='<button data-jump="ctAging">Aging & Target</button><button data-jump="ctRisk">Risk TOP 20</button><button data-jump="ctAction">Action Board</button><button data-jump="ctDetail">상세현황 보기</button>';
-    filters.insertAdjacentElement('afterend',nav);
+
+  const oldDetail=$('ctDetail');
+  if(oldDetail){
+    const body=oldDetail.querySelector('.ct-detail-body');
+    if(body){[...body.children].forEach(el=>main.insertBefore(el,oldDetail));}
+    oldDetail.remove();
   }
+
+  const group=main.querySelector('.entity');
+  const outlet=[...main.querySelectorAll('.table-panel')].find(x=>x.querySelector('h2')?.textContent.includes('업체별 연동률 현황'));
+  const changes=main.querySelector('.changes');
+  const need=[...main.querySelectorAll('.table-panel')].find(x=>x.querySelector('h2')?.textContent.includes('연동 필요 리스트'));
+  const legacyKpis=main.querySelector('.kpis');
   const ctPanels=[...main.querySelectorAll(':scope > .ct-panel')].filter(x=>x!==hero);
-  if(ctPanels[0])ctPanels[0].id='ctAging';
-  const risk=ctPanels.find(x=>x.textContent.includes('Risk Priority'));if(risk)risk.id='ctRisk';
-  const action=ctPanels.find(x=>x.textContent.includes('담당자 Action Board'));if(action)action.id='ctAction';
-  if(!document.getElementById('ctDetail')){
-    const details=document.createElement('details');details.id='ctDetail';details.className='ct-detail-wrap';
-    const summary=document.createElement('summary');summary.innerHTML='<span><strong>상세현황 보기</strong><small>기존 KPI · 그룹사별 · 업체별 · 전월비 · 연동 필요 리스트</small></span><b class="ct-detail-chevron">⌄</b>';details.appendChild(summary);
-    const body=document.createElement('div');body.className='ct-detail-body';details.appendChild(body);
-    const legacy=[...main.children].filter(el=>el.classList?.contains('kpis')||el.classList?.contains('entity')||el.classList?.contains('changes')||(el.classList?.contains('table-panel')&&!el.classList?.contains('ct-panel')));
-    const footer=main.querySelector('.footer');footer?main.insertBefore(details,footer):main.appendChild(details);legacy.forEach(el=>body.appendChild(el));
-  }
+  const aging=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('DCM Aging & Target'));
+  const ai=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('AI 월간 분석'));
+  const risk=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('Risk Priority'));
+  const action=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('담당자 Action Board'));
+  if(group){group.id='ctGroup';group.classList.add('ct-overview-section');}
+  if(outlet){outlet.id='ctOutlet';outlet.classList.add('ct-overview-section');}
+  if(aging)aging.id='ctAging';
+  if(ai)ai.id='ctAiSection';
+  if(risk)risk.id='ctRisk';
+  if(action)action.id='ctAction';
+  if(changes)changes.id='ctChanges';
+  if(need)need.id='ctNeed';
+  if(legacyKpis)legacyKpis.classList.add('ct-support-kpis');
+
+  let anchor=filters;
+  [group,outlet,aging,ai,risk,action,legacyKpis,changes,need].forEach(el=>{
+    if(!el)return;
+    anchor.insertAdjacentElement('afterend',el);
+    anchor=el;
+  });
+
+  let nav=$('ctQuickNav');
+  if(!nav){nav=document.createElement('div');nav.id='ctQuickNav';nav.className='ct-quick-nav';filters.insertAdjacentElement('afterend',nav);}
+  nav.innerHTML='<button data-jump="ctGroup">그룹사별 현황</button><button data-jump="ctOutlet">업체별 현황</button><button data-jump="ctAging">Aging & Target</button><button data-jump="ctRisk">Risk TOP 20</button><button data-jump="ctAction">Action Board</button><button data-jump="ctChanges">전월비 분석</button><button data-jump="ctNeed">연동 필요 리스트</button>';
   document.querySelectorAll('#ctQuickNav [data-jump]').forEach(btn=>btn.onclick=()=>{
-    const target=document.getElementById(btn.dataset.jump);if(!target)return;
+    const target=$(btn.dataset.jump);if(!target)return;
     if(target.id==='ctAction'&&!actionOpen)openActionBoard();
-    if(target.tagName==='DETAILS')target.open=true;
     target.scrollIntoView({behavior:'smooth',block:'start'});
   });
 }
