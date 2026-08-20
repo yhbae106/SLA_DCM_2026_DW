@@ -21,8 +21,7 @@ function doPost(e) {
       return json_({ok:true});
     }
     if (body.type !== 'save') throw new Error('지원하지 않는 요청입니다.');
-    syncReasons_(body.reasons || {});
-    const result = saveActions_(Array.isArray(body.actions) ? body.actions : [], body.editor || '');
+    const result = saveActions_(Array.isArray(body.actions) ? body.actions : [], body.editor || '', body.mode || 'edit');
     return json_({ok:true, ...result});
   } catch (err) {
     return json_({ok:false, error:String(err && err.message || err)});
@@ -101,16 +100,18 @@ function loadActions_() {
   return {actions:actions, updatedBy:latestBy, updatedAt:latestAt};
 }
 
-function saveActions_(actions, editor) {
+function saveActions_(actions, editor, mode) {
   const ss = SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
   const sh = ss.getSheetByName(DCM_SHEET);
   const last = sh.getLastRow();
   const existing = last >= 2 ? sh.getRange(2,1,last-1,13).getDisplayValues() : [];
   const rowByKey = new Map();
   existing.forEach((r,i) => { if (r[0]) rowByKey.set(r[0], {row:i+2, values:r}); });
-  const now = new Date();
-  const nowIso = Utilities.formatDate(now, 'Asia/Seoul', "yyyy-MM-dd'T'HH:mm:ssXXX");
+  const nowIso = Utilities.formatDate(new Date(), 'Asia/Seoul', "yyyy-MM-dd'T'HH:mm:ssXXX");
   const historyRows = [];
+  let changedRows = 0;
+  let latestBy = '';
+  let latestAt = '';
 
   actions.forEach(a => {
     if (!a || !a.key) return;
@@ -118,29 +119,47 @@ function saveActions_(actions, editor) {
     const prev = found ? found.values : Array(13).fill('');
     const outlet = a.outlet || prev[4] || String(a.key).split('|||')[0] || '';
     const businessNo = a.businessNo || prev[1] || String(a.key).split('|||')[1] || '';
-    const next = [
+    const fixed = [
       a.key,
       businessNo,
       a.priority || prev[2] || '',
       a.businessName || prev[3] || '',
       outlet,
       a.manager || prev[5] || '',
-      a.aging || prev[6] || '',
+      a.aging || prev[6] || ''
+    ];
+    const editable = [
       reasonText_(a.reasonCode),
       a.plan || '',
       a.dueDate || '',
-      statusLabel_(a.status),
-      editor || a.modifiedBy || prev[11] || '',
-      nowIso
+      statusLabel_(a.status)
     ];
+    const fixedChanged = !found || fixed.some((v,i)=>String(prev[i]||'')!==String(v||''));
     const editableIndexes = [7,8,9,10];
-    editableIndexes.forEach(idx => {
-      if (String(prev[idx] || '') !== String(next[idx] || '')) {
-        historyRows.push([Utilities.getUuid(),a.key,outlet,businessNo,next[3] || '',next[5] || '',['원인','조치계획','Due','상태'][editableIndexes.indexOf(idx)],prev[idx] || '',next[idx] || '',next[11],nowIso]);
-      }
-    });
+    const editableChanged = found && editableIndexes.some((idx,i)=>String(prev[idx]||'')!==String(editable[i]||''));
+    const hasUserContent = !!(a.reasonCode || a.plan || a.dueDate || (a.status && a.status !== 'TODO'));
+    const stampEdit = editableChanged || (!found && hasUserContent && mode !== 'snapshot');
+    const nextEditor = stampEdit ? (editor || a.modifiedBy || prev[11] || '') : (prev[11] || '');
+    const nextTime = stampEdit ? nowIso : (prev[12] || '');
+    const next = [...fixed, ...editable, nextEditor, nextTime];
+
+    if (editableChanged) {
+      editableIndexes.forEach((idx,i) => {
+        if (String(prev[idx] || '') !== String(editable[i] || '')) {
+          historyRows.push([Utilities.getUuid(),a.key,outlet,businessNo,next[3] || '',next[5] || '',['원인','조치계획','Due','상태'][i],prev[idx] || '',editable[i] || '',editor || a.modifiedBy || '',nowIso]);
+        }
+      });
+    }
+
+    const rowChanged = !found || fixedChanged || editableChanged;
+    if (!rowChanged) return;
+    changedRows++;
+    if (stampEdit) { latestBy = nextEditor; latestAt = nextTime; }
     if (found) sh.getRange(found.row,1,1,13).setValues([next]);
-    else { sh.appendRow(next); rowByKey.set(a.key,{row:sh.getLastRow(),values:next}); }
+    else {
+      sh.appendRow(next);
+      rowByKey.set(a.key,{row:sh.getLastRow(),values:next});
+    }
   });
 
   if (historyRows.length) {
@@ -148,7 +167,7 @@ function saveActions_(actions, editor) {
     if (!hist) { setupDcmActionSync(); hist = ss.getSheetByName(DCM_HISTORY_SHEET); }
     hist.getRange(hist.getLastRow()+1,1,historyRows.length,11).setValues(historyRows);
   }
-  return {updatedBy:editor || '', updatedAt:nowIso};
+  return {updatedBy:latestBy, updatedAt:latestAt, changedRows:changedRows};
 }
 
 function syncReasons_(reasons) {
@@ -157,9 +176,12 @@ function syncReasons_(reasons) {
   let cfg = ss.getSheetByName(DCM_CONFIG_SHEET);
   if (!cfg) { cfg = ss.insertSheet(DCM_CONFIG_SHEET); cfg.hideSheet(); }
   const entries = Object.keys(reasons).sort().map(k => [k, reasons[k]]);
-  cfg.clearContents();
-  cfg.getRange(1,1,1,2).setValues([['code','label']]);
-  if (entries.length) cfg.getRange(2,1,entries.length,2).setValues(entries);
+  const current = cfg.getLastRow() >= 2 ? cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues() : [];
+  if (JSON.stringify(current) !== JSON.stringify(entries)) {
+    cfg.clearContents();
+    cfg.getRange(1,1,1,2).setValues([['code','label']]);
+    if (entries.length) cfg.getRange(2,1,entries.length,2).setValues(entries);
+  }
   const labels = entries.map(x => `${x[0]} ${x[1]}`);
   if (labels.length) {
     const rule = SpreadsheetApp.newDataValidation().requireValueInList(labels, true).setAllowInvalid(false).build();
