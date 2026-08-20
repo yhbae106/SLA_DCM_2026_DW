@@ -3,7 +3,7 @@ window.DCM_ACTION_SYNC={
   spreadsheetId:'1LbEuintnEZbnwJXZcrbTWZNECWMg4ry7_UwRsQ9end0',
   sheetName:'Action Board',
   editors:['배영훈','정직한','임인숙'],
-  pollMs:60000
+  pollMs:180000
 };
 
 window.DCM_ACTION_REASONS={
