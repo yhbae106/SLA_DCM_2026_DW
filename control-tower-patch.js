@@ -20,7 +20,7 @@ function syncHeroSupportKpis(){
   const supplySub=$('kpiSupplySub'),ctSupplySub=$('ctSupplySub');if(supplySub&&ctSupplySub&&supplySub.textContent.trim())ctSupplySub.textContent=supplySub.textContent.trim();
   const delta=$('ctDelta'),card=delta?.closest('.ct-kpi');if(card){card.classList.remove('ct-kpi-good','ct-kpi-bad','ct-kpi-neutral');const t=(delta.textContent||'').trim();if(t.startsWith('+'))card.classList.add('ct-kpi-good');else if(t.startsWith('-'))card.classList.add('ct-kpi-bad');else card.classList.add('ct-kpi-neutral');}
 }
-function trimDuplicateChangeCards(changes){if(!changes)return;const duplicateLabels=new Set(['연동률 변화','X→O 개선','O→X 연동 해제']);changes.querySelectorAll('.change-card').forEach(card=>{const label=card.querySelector('.change-label')?.textContent.trim();if(duplicateLabels.has(label))card.remove();});changes.classList.add('ct-change-summary');}
+function trimDuplicateChangeCards(changes){if(!changes)return;const duplicateLabels=new Set(['연동률 변화','X→O 개선','O→X 연동 해제']);changes.querySelectorAll('.change-card').forEach(card=>{const label=card.querySelector('.change-label')?.textContent.trim();if(duplicateLabels.has(label))card.classList.add('ct-change-duplicate');});changes.classList.add('ct-change-summary');}
 function changeData(){try{const x=JSON.parse(localStorage.getItem(DATA_KEY));if(Array.isArray(x)&&x.length)return x;}catch(e){}return window.DCM_BASE_DATA||[];}
 function changeMonths(data){return [...new Set(data.map(r=>r.month).filter(Boolean))].sort();}
 function changeScope(data,month){const L=window.DCMLogic;if(!L||!month)return [];return L.filterRecords(data,{month,manager:$('manager')?.value||'전체',outlet:$('outlet')?.value||'전체'});}
