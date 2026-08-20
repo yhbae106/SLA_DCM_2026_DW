@@ -53,7 +53,7 @@ function installAllXBoard(){
   let timer=null;const schedule=(delay=80)=>{clearTimeout(timer);timer=setTimeout(renderAllXActionBoard,delay);};
   const obs=new MutationObserver(()=>{if(tbody.dataset.allXRendering==='1')return;schedule();});obs.observe(tbody,{childList:true,subtree:true});
   ['manager','outlet','month'].forEach(id=>$(id)?.addEventListener('change',()=>schedule(120)));
-  window.addEventListener('focus',()=>schedule(120));
+  window.addEventListener('dcm-action-sync-applied',()=>schedule(40));
   schedule(150);
 }
 window.addEventListener('load',()=>{
