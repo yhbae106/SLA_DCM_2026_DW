@@ -37,11 +37,20 @@ function installLayout(){
     target.scrollIntoView({behavior:'smooth',block:'start'});
   });
 }
+function localActions(){try{const x=JSON.parse(localStorage.getItem(ACTION_KEY));return Array.isArray(x)?x:[];}catch(e){return [];}}
+function renderReasonPareto(rows){
+  const box=$('ctReasonBars');if(!box)return;
+  const reasons=window.DCM_ACTION_REASONS||{},riskKeys=new Set((rows||window.DCMActionSync?.allRisk?.()||[]).map(r=>r.key));
+  const used={};localActions().filter(a=>riskKeys.has(a.key)).forEach(a=>{if(a.reasonCode&&reasons[a.reasonCode])used[a.reasonCode]=(used[a.reasonCode]||0)+1;});
+  const total=Object.values(used).reduce((a,b)=>a+b,0)||1;
+  box.innerHTML=Object.entries(used).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="ct-bar-row"><span>${esc(reasons[k])}</span><div class="ct-bar"><i style="width:${v/total*100}%"></i></div><b>${v}</b></div>`).join('')||'<div class="ct-note">현재 필터 범위의 Action Board에서 원인코드를 입력하면 자동 집계됩니다.</div>';
+}
 function saveBoardField(k,field,value){
-  let actions=[];try{const x=JSON.parse(localStorage.getItem(ACTION_KEY));if(Array.isArray(x))actions=x;}catch(e){}
+  const actions=localActions();
   let a=actions.find(x=>x.key===k);if(!a){const [outlet,businessNo]=k.split('|||');a={key:k,outlet,businessNo,history:[]};actions.push(a);}
   a[field]=value;a.updatedAt=new Date().toISOString();a.history=Array.isArray(a.history)?a.history:[];a.history.unshift({at:a.updatedAt,field,value});a.history=a.history.slice(0,50);
   localStorage.setItem(ACTION_KEY,JSON.stringify(actions));
+  if(field==='reasonCode')renderReasonPareto();
 }
 function ensureActionControls(){
   const panel=$('ctAction'),tbody=$('ctActionBody');if(!panel||!tbody)return;
@@ -82,6 +91,7 @@ function renderAllXActionBoard(){
   const reasons=window.DCM_ACTION_REASONS||{};
   tbody.innerHTML=visible.map(r=>`<tr><td><span class="ct-priority ct-${String(r.priority||'P3').toLowerCase()}">${esc(r.priority||'P3')}</span></td><td><strong>${Number(r.score)||0}</strong></td><td>${esc(r.businessName||'')}</td><td>${esc(r.outlet||'')}</td><td>${esc(r.manager||'')}</td><td>${esc(r.aging||'')}</td><td><select data-allx-field="reasonCode" data-key="${esc(r.key)}"><option value="">원인 선택</option>${Object.entries(reasons).map(([k,v])=>`<option value="${esc(k)}" ${r.reasonCode===k?'selected':''}>${esc(k)} ${esc(v)}</option>`).join('')}</select></td><td><input type="text" data-allx-field="plan" data-key="${esc(r.key)}" value="${esc(r.plan||'')}" placeholder="조치계획"></td><td><input type="date" data-allx-field="dueDate" data-key="${esc(r.key)}" value="${esc(r.dueDate||'')}"></td><td><select data-allx-field="status" data-key="${esc(r.key)}">${['TODO','IN_PROGRESS','WAITING','DONE'].map(s=>`<option value="${s}" ${(r.status||'TODO')===s?'selected':''}>${statusLabel(s)}</option>`).join('')}</select></td></tr>`).join('')||'<tr><td colspan="10" class="empty">현재 필터 범위에 X 거래처가 없습니다.</td></tr>';
   tbody.querySelectorAll('[data-allx-field]').forEach(el=>el.addEventListener('change',()=>saveBoardField(el.dataset.key,el.dataset.allxField,el.value)));
+  renderReasonPareto(rows);
   const shown=$('ctActionShown'),more=$('ctActionMore'),all=$('ctActionAll');if(shown)shown.textContent=`${Math.min(visible.length,rows.length)} / ${rows.length}건 표시`;
   if(more)more.hidden=visible.length>=rows.length;if(all)all.hidden=visible.length>=rows.length;
 }
@@ -92,7 +102,7 @@ function installAllXBoard(){
   window.addEventListener('dcm-action-sync-applied',()=>scheduleActionRender(80));
 }
 window.addEventListener('load',()=>{
-  installLayout();installAllXBoard();
+  installLayout();installAllXBoard();renderReasonPareto();
   const old=document.getElementById('resetBtn');if(!old)return;
   const b=old.cloneNode(true);old.replaceWith(b);
   b.onclick=()=>{if(!confirm('브라우저에 추가한 월별 데이터와 Action 이력을 지우고 최초 6월/7월 데이터로 복원할까요?'))return;localStorage.setItem(DATA_KEY,JSON.stringify(window.DCM_BASE_DATA||[]));localStorage.setItem(ACTION_KEY,'[]');location.reload();};

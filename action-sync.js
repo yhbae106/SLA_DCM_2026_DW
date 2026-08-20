@@ -8,6 +8,7 @@ const TOKEN_KEY='dcm-action-sync-key';
 const REMOTE_HASH_KEY='dcm-action-sync-last-remote';
 const REASON_HASH_KEY='dcm-action-sync-reason-hash';
 const RISK_HASH_KEY='dcm-action-sync-risk-hash';
+const REASON_SCHEMA_KEY='dcm-action-reason-schema-v2';
 const originalSetItem=Storage.prototype.setItem;
 let suppressSync=false,pollTimer=null,snapshotTimer=null,lastMeta=null,lastPullAt=0,lastEditAt=0;
 const $=id=>document.getElementById(id);
@@ -17,6 +18,14 @@ function token(){return localStorage.getItem(TOKEN_KEY)||'';}
 function editor(){return localStorage.getItem(EDITOR_KEY)||CFG.editors?.[0]||'';}
 function hash(v){try{return JSON.stringify(v||[]);}catch(e){return ''}}
 function getLocalActions(){try{const x=JSON.parse(localStorage.getItem(ACTION_KEY));return Array.isArray(x)?x:[];}catch(e){return []}}
+function migrateLegacyLocalReasons(){
+ if(localStorage.getItem(REASON_SCHEMA_KEY)==='1')return;
+ const map={'01':'01','02':'04','03':'03','04':'03','05':'06','06':'05','07':'','08':'03','09':'','99':''};
+ const actions=getLocalActions();let changed=false;
+ actions.forEach(a=>{const old=String(a?.reasonCode||'');if(old&&Object.prototype.hasOwnProperty.call(map,old)){const next=map[old];if(next!==old){a.reasonCode=next;changed=true;}}});
+ if(changed){suppressSync=true;originalSetItem.call(localStorage,ACTION_KEY,JSON.stringify(actions));suppressSync=false;}
+ localStorage.setItem(REASON_SCHEMA_KEY,'1');
+}
 function getData(){try{const x=JSON.parse(localStorage.getItem(DATA_KEY));if(Array.isArray(x)&&x.length)return x;}catch(e){}try{return JSON.parse(JSON.stringify(window.DCM_BASE_DATA||[]));}catch(e){return []}}
 function rowKey(r){return `${r.outlet}|||${r.businessNo}`;}
 function months(data){return [...new Set(data.map(r=>r.month).filter(Boolean))].sort();}
@@ -133,7 +142,7 @@ Storage.prototype.setItem=function(k,v){
  }catch(e){}
 };
 function start(){
- installUI();observeBoard();
+ migrateLegacyLocalReasons();installUI();observeBoard();
  syncReasonsIfNeeded(false).catch(e=>console.warn('[DCM Action Sync] reason sync failed',e));
  pullRemote(false).then(()=>scheduleRiskSnapshot(1400,false));
  if(pollTimer)clearInterval(pollTimer);const poll=Math.max(180000,Number(CFG.pollMs)||180000);pollTimer=setInterval(()=>pullRemote(false),poll);
