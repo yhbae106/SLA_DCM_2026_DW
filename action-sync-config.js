@@ -15,3 +15,22 @@ window.DCM_ACTION_REASONS={
   '06':'신규 거래처 연동 예정',
   '07':'당월 매출 미발생'
 };
+
+(()=>{
+  'use strict';
+  function syncControlTowerRateDetail(){
+    const source=document.getElementById('kpiRateSub');
+    const target=document.getElementById('ctRate')?.closest('.ct-kpi')?.querySelector('.s');
+    if(!target)return;
+    const text=(source?.textContent||'').trim();
+    const match=text.match(/평가\s*([\d,]+)처\s*중\s*연동\s*O\s*([\d,]+)처/);
+    target.textContent=match?`O ${match[2]}건 / O+X ${match[1]}건`:'O -건 / O+X -건';
+  }
+  function start(){
+    const source=document.getElementById('kpiRateSub');
+    syncControlTowerRateDetail();
+    if(source)new MutationObserver(syncControlTowerRateDetail).observe(source,{childList:true,subtree:true,characterData:true});
+    ['manager','outlet','month'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>setTimeout(syncControlTowerRateDetail,80)));
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+})();
