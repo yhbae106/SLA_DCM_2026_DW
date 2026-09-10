@@ -26,11 +26,16 @@ window.DCM_ACTION_REASONS={
     const match=text.match(/평가\s*([\d,]+)처\s*중\s*연동\s*O\s*([\d,]+)처/);
     target.textContent=match?`O ${match[2]}건 / O+X ${match[1]}건`:'O -건 / O+X -건';
   }
+  function loadMasterSync(){
+    if(document.querySelector('script[data-master-sync]'))return;
+    const s=document.createElement('script');s.src='master-data-sync.js?v=1';s.dataset.masterSync='1';document.head.appendChild(s);
+  }
   function start(){
     const source=document.getElementById('kpiRateSub');
     syncControlTowerRateDetail();
     if(source)new MutationObserver(syncControlTowerRateDetail).observe(source,{childList:true,subtree:true,characterData:true});
     ['manager','outlet','month'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>setTimeout(syncControlTowerRateDetail,80)));
+    loadMasterSync();
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
