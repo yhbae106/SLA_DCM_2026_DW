@@ -36,8 +36,11 @@ window.DCM_ACTION_REASONS={
   }
   function norm(v){return window.DCMLogic?.normStatus?window.DCMLogic.normStatus(v):String(v||'').trim().toUpperCase();}
   function rowKey(r){return `${r.outlet}|||${r.businessNo}`;}
+  function persistCard(){
+    return document.querySelector('.ct-kpi[data-persist-matrix="1"]') || document.getElementById('ctPersist')?.closest('.ct-kpi') || null;
+  }
   function renderPersistMatrix(){
-    const L=window.DCMLogic,value=document.getElementById('ctPersist'),card=value?.closest('.ct-kpi');
+    const L=window.DCMLogic,card=persistCard();
     if(!L||!card)return;
     const E=L.E||['대웅제약','대웅바이오','한올바이오'],data=loadData();
     const cur=document.getElementById('month')?.value||[...new Set(data.map(r=>r.month).filter(Boolean))].sort().at(-1);if(!cur)return;
@@ -60,15 +63,16 @@ window.DCM_ACTION_REASONS={
     const set=(id,v,s)=>{const el=document.getElementById(id);if(el)el.textContent=`${v.toLocaleString()}${s}`;};
     set('ctPersistAbs',persistAbs,'처');set('ctPersistState',persistState,'건');set('ctAll3Abs',all3Abs,'처');set('ctAll3State',all3State,'건');
   }
+  function refreshPersistSoon(){setTimeout(renderPersistMatrix,40);setTimeout(renderPersistMatrix,180);}
   function start(){
     const source=document.getElementById('kpiRateSub');
     syncControlTowerRateDetail();
     if(source)new MutationObserver(syncControlTowerRateDetail).observe(source,{childList:true,subtree:true,characterData:true});
-    ['manager','outlet','month'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>{setTimeout(syncControlTowerRateDetail,80);setTimeout(renderPersistMatrix,120);}));
+    ['manager','outlet','month'].forEach(id=>document.getElementById(id)?.addEventListener('change',()=>{setTimeout(syncControlTowerRateDetail,80);refreshPersistSoon();}));
     loadMasterSync();
-    const t=setInterval(()=>{if(document.getElementById('ctPersist')){clearInterval(t);setTimeout(renderPersistMatrix,180);}},100);
-    window.addEventListener('storage',e=>{if(e.key==='dcm-dashboard-v8-data')setTimeout(renderPersistMatrix,100);});
-    window.addEventListener('dcm-dashboard-remote-applied',()=>setTimeout(renderPersistMatrix,120));
+    const t=setInterval(()=>{if(persistCard()){clearInterval(t);setTimeout(renderPersistMatrix,180);}},100);
+    window.addEventListener('storage',e=>{if(e.key==='dcm-dashboard-v8-data')refreshPersistSoon();});
+    window.addEventListener('dcm-dashboard-remote-applied',refreshPersistSoon);
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
 })();
