@@ -4,7 +4,7 @@ const L=window.DCMLogic,CFG=window.DCM_CONFIG,STORAGE_KEY='dcm-dashboard-v8-data
 function clone(x){return JSON.parse(JSON.stringify(x));}
 function loadData(){try{const raw=localStorage.getItem(STORAGE_KEY);if(raw){const obj=JSON.parse(raw);if(Array.isArray(obj)&&obj.length)return obj;}}catch(e){}return clone(window.DCM_BASE_DATA||[]);}
 function saveData(){localStorage.setItem(STORAGE_KEY,JSON.stringify(data));}
-function esc(v){return String(v??'').replace(/[&<>'"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+function esc(v){return String(v??'').replace(/[&<>'\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]));}
 function pct(v){return v==null?'—':(v*100).toFixed(1)+'%';}function pp(v){if(v==null||!Number.isFinite(v))return '—';return `${v>=0?'+':''}${(v*100).toFixed(1)}%p`;}
 function signedCount(v){return `${v>=0?'+':''}${v.toLocaleString()}처`;}
 function signedPct(v){if(v==null||!Number.isFinite(v))return '—';return `${v>=0?'+':''}${(v*100).toFixed(1)}%`;}
@@ -25,11 +25,46 @@ function renderNeeds(curr){const rows=L.needList(curr);$('needCount').textConten
 function renderChanges(prev,cur,ps,s,ch){$('changeTitle').textContent=prev?`${monthLabel(prev)} 대비 ${monthLabel(cur)}, 전월 대비 무엇이 달라졌나`:`${monthLabel(cur)} (비교할 이전 월 없음)`;$('changeSub').textContent=prev?`${monthLabel(prev)} → ${monthLabel(cur)} · 현재 필터 기준`:'월별 파일을 추가하면 전월 비교가 자동 생성됩니다.';const delta=(s.rate!=null&&ps.rate!=null)?s.rate-ps.rate:null;$('deltaRate').textContent=pp(delta);$('deltaRate').className='change-value '+(delta==null?'':delta>=0?'positive':'negative');$('x2o').textContent=ch.xToO.length.toLocaleString();$('o2x').textContent=ch.oToX.length.toLocaleString();$('newSupply').textContent=ch.newSupply.length.toLocaleString();$('stopSupply').textContent=ch.stoppedSupply.length.toLocaleString();
  const sd=s.suppliedAbsolute-ps.suppliedAbsolute,sdp=prev&&ps.suppliedAbsolute?sd/ps.suppliedAbsolute:null;$('supplyDelta').textContent=prev?`${signedCount(sd)} / ${signedPct(sdp)}`:'—';$('supplyDelta').className='change-value '+(!prev?'':sd>=0?'positive':'negative');$('supplyDeltaSub').textContent=prev?`${ps.suppliedAbsolute.toLocaleString()}처 → ${s.suppliedAbsolute.toLocaleString()}처`:'이전 월 없음';
  const type=$('changeType').value;let rows=[];if(type==='new')rows=ch.newSupply.map(r=>({kind:'신규 공급',...r,corp:r.entities.map(x=>`${x.outlet!==r.outlet?x.outlet+' / ':''}${x.entity} ${x.status}`).join(' · '),change:'미공급 → O/X',detail:`신규 공급 · ${r.entities.map(x=>`${x.entity} 연동 ${x.status}`).join(' / ')}`}));if(type==='stop')rows=ch.stoppedSupply.map(r=>({kind:'공급 중단',...r,corp:r.entities.map(x=>`${x.outlet!==r.outlet?x.outlet+' / ':''}${x.entity} (기존 ${x.status})`).join(' · '),change:'O/X → 미공급',detail:`공급 중단 · 기존 ${r.entities.map(x=>`${x.entity} 연동 ${x.status}`).join(' / ')}`}));if(type==='x2o')rows=ch.xToO.map(r=>({kind:'X→O 개선',...r,corp:r.entity,change:'X → O',detail:'연동 개선'}));if(type==='o2x')rows=ch.oToX.map(r=>({kind:'O→X 해제',...r,corp:r.entity,change:'O → X',detail:'연동 해제'}));$('changeBody').innerHTML=rows.map(r=>`<tr><td><strong>${esc(r.kind)}</strong></td><td>${esc(r.outlet)}</td><td>${esc(r.manager)}</td><td class="mono">${esc(r.businessNo)}</td><td>${esc(r.businessName)}</td><td>${esc(r.corp)}</td><td>${esc(r.change)}</td><td>${esc(r.detail)}</td></tr>`).join('')||'<tr><td colspan="8" class="empty">해당 변동이 없습니다.</td></tr>';$('changeCount').textContent=`${rows.length.toLocaleString()}${type==='new'||type==='stop'?'처':'건'}`;}
-function normalizeOutlet(name){const s=String(name??'').trim();if(s.includes('원주'))return '백제약품 원주';if(s.includes('영남'))return '백제약품 영남';if(s.includes('대전'))return '백제약품 대전';if(s.includes('영등포'))return '백제약품 영등포';if(s.includes('인천'))return '인천약품';if(s.includes('복산'))return '복산나이스';if(s.includes('유진'))return '유진약품';if(s.includes('아이팜'))return '아이팜코리아';return s;}
-function fileYear(name){const m=String(name).match(/(?:^|\D)(\d{2})(\d{2})(?:\D|$)/);if(m)return 2000+Number(m[1]);const lm=months().at(-1);return lm?Number(lm.slice(0,4)):new Date().getFullYear();}
+function normalizeOutlet(name){const s=String(name??'').trim();if(s.includes('원주'))return '백제약품 원주';if(s.includes('영남'))return '백제약품 영남';if(s.includes('대전'))return '백제약품 대전';if(s.includes('영등포'))return '백제약품 영등포';if(s.includes('인천'))return '인천약품';if(s.includes('복산'))return '복산나이스';if(s.includes('유진'))return '유진약품';if(s.includes('아이팜')||s.includes('동보약품'))return '아이팜코리아';return s;}
+function fileYear(name){const s=String(name??'');let m=s.match(/(?:^|\D)(20\d{2})[-_. ]?(\d{1,2})(?:\D|$)/);if(m)return Number(m[1]);m=s.match(/(?:^|\D)(\d{2})(\d{2})(?:\D|$)/);if(m)return 2000+Number(m[1]);const lm=months().at(-1);return lm?Number(lm.slice(0,4)):new Date().getFullYear();}
 function bizNo(v){if(v==null)return '';const s=String(v).trim();return s.replace(/\.0$/,'').replace(/\D/g,'')||s;}
-async function parseWorkbook(file){if(!window.XLSX)throw new Error('Excel 읽기 라이브러리를 불러오지 못했습니다. 인터넷 연결 또는 사내 방화벽을 확인해 주세요.');const wb=XLSX.read(await file.arrayBuffer(),{type:'array'}),year=fileYear(file.name),out=[];wb.SheetNames.forEach(sh=>{const mm=sh.trim().match(/^(\d{1,2})월$/);if(!mm)return;const aoa=XLSX.utils.sheet_to_json(wb.Sheets[sh],{header:1,defval:null,raw:true});if(!aoa.length)return;const hdr=aoa[0].map(x=>String(x??'').trim()),idx=Object.fromEntries(hdr.map((x,i)=>[x,i]));if(idx['도매상명']==null||idx['실사업자번호']==null||idx['실사업자명']==null)return;const month=`${year}-${String(Number(mm[1])).padStart(2,'0')}`,map=new Map();aoa.slice(1).forEach(row=>{const b=bizNo(row[idx['실사업자번호']]);if(!b)return;const outlet=normalizeOutlet(row[idx['도매상명']]);if(!CFG.managerByOutlet[outlet])return;const key=`${month}|||${outlet}|||${b}`;if(!map.has(key))map.set(key,{month,outlet,manager:CFG.managerByOutlet[outlet],businessNo:b,businessName:String(row[idx['실사업자명']]??'').trim(),statuses:{'대웅제약':null,'대웅바이오':null,'한올바이오':null}});const rec=map.get(key);L.E.forEach(e=>{if(idx[e]==null)return;const v=L.normStatus(row[idx[e]]);if(v)rec.statuses[e]=(rec.statuses[e]&&rec.statuses[e]!==v)?'X':v;});});out.push(...map.values());});return out;}
-async function uploadFiles(files){const all=[];for(const f of files)all.push(...await parseWorkbook(f));if(!all.length)throw new Error('인식 가능한 월 시트(예: 8월)와 필수 열을 찾지 못했습니다.');const pairs=new Set(all.map(r=>`${r.month}|||${r.outlet}`));data=data.filter(r=>!pairs.has(`${r.month}|||${r.outlet}`));const map=new Map(data.map(r=>[`${r.month}|||${r.outlet}|||${r.businessNo}`,r]));all.forEach(r=>map.set(`${r.month}|||${r.outlet}|||${r.businessNo}`,r));data=[...map.values()];saveData();refreshSelectors(false);render();const p=[...pairs].map(x=>x.split('|||')).sort();$('uploadMsg').textContent=`업데이트 완료: ${p.map(x=>`${monthLabel(x[0])} ${x[1]}`).join(', ')} · ${all.length.toLocaleString()}처 반영`;}
+function entityName(v){const s=String(v??'').replace(/\s/g,'');if(s.includes('한올'))return '한올바이오';if(s.includes('대웅바이오'))return '대웅바이오';if(s.includes('대웅제약'))return '대웅제약';return null;}
+function monthFromText(v,fallbackYear){const s=String(v??'');let m=s.match(/(20\d{2})[-./년\s]*(\d{1,2})(?:월|\D|$)/);if(m){const mm=Number(m[2]);if(mm>=1&&mm<=12)return `${m[1]}-${String(mm).padStart(2,'0')}`;}m=s.match(/(?:^|\D)(\d{1,2})월(?:\D|$)/);if(m){const mm=Number(m[1]);if(mm>=1&&mm<=12)return `${fallbackYear}-${String(mm).padStart(2,'0')}`;}return null;}
+function findHeaderRow(aoa,required){for(let r=0;r<Math.min(aoa.length,20);r++){const hdr=aoa[r].map(x=>String(x??'').trim());if(required.every(x=>hdr.includes(x)))return {row:r,hdr,idx:Object.fromEntries(hdr.map((x,i)=>[x,i]))};}return null;}
+function detectMonth(file,sh,aoa){const y=fileYear(file.name);return monthFromText(file.name,y)||monthFromText(aoa?.[0]?.[0],y)||monthFromText(aoa?.[2]?.[0],y)||monthFromText(sh,y);}
+function mergeStatus(rec,e,v){if(!e||!v)return;rec.statuses[e]=(rec.statuses[e]&&rec.statuses[e]!==v)?'X':v;}
+async function parseWorkbook(file){
+ if(!window.XLSX)throw new Error('Excel 읽기 라이브러리를 불러오지 못했습니다. 인터넷 연결 또는 사내 방화벽을 확인해 주세요.');
+ const wb=XLSX.read(await file.arrayBuffer(),{type:'array'}),out=[];
+ wb.SheetNames.forEach(sh=>{
+  const aoa=XLSX.utils.sheet_to_json(wb.Sheets[sh],{header:1,defval:null,raw:true});if(!aoa.length)return;
+  const month=detectMonth(file,sh,aoa);if(!month)return;
+  const newFmt=findHeaderRow(aoa,['회사','도도매명','사업자번호','연동']);
+  if(newFmt){
+   const outlet=normalizeOutlet(sh||aoa?.[0]?.[0]||file.name);if(!CFG.managerByOutlet[outlet])return;
+   const map=new Map();
+   aoa.slice(newFmt.row+1).forEach(row=>{
+    const b=bizNo(row[newFmt.idx['사업자번호']]);if(!b)return;
+    const e=entityName(row[newFmt.idx['회사']]),v=L.normStatus(row[newFmt.idx['연동']]);if(!e||!v)return;
+    if(!map.has(b))map.set(b,{month,outlet,manager:CFG.managerByOutlet[outlet],businessNo:b,businessName:String(row[newFmt.idx['도도매명']]??'').trim(),statuses:{'대웅제약':null,'대웅바이오':null,'한올바이오':null}});
+    const rec=map.get(b);if(!rec.businessName)rec.businessName=String(row[newFmt.idx['도도매명']]??'').trim();mergeStatus(rec,e,v);
+   });
+   out.push(...map.values());return;
+  }
+  const oldFmt=findHeaderRow(aoa,['도매상명','실사업자번호','실사업자명']);if(!oldFmt)return;
+  const map=new Map();
+  aoa.slice(oldFmt.row+1).forEach(row=>{
+   const b=bizNo(row[oldFmt.idx['실사업자번호']]);if(!b)return;
+   const outlet=normalizeOutlet(row[oldFmt.idx['도매상명']]);if(!CFG.managerByOutlet[outlet])return;
+   const key=`${month}|||${outlet}|||${b}`;
+   if(!map.has(key))map.set(key,{month,outlet,manager:CFG.managerByOutlet[outlet],businessNo:b,businessName:String(row[oldFmt.idx['실사업자명']]??'').trim(),statuses:{'대웅제약':null,'대웅바이오':null,'한올바이오':null}});
+   const rec=map.get(key);L.E.forEach(e=>{if(oldFmt.idx[e]==null)return;mergeStatus(rec,e,L.normStatus(row[oldFmt.idx[e]]));});
+  });
+  out.push(...map.values());
+ });
+ return out;
+}
+async function uploadFiles(files){const all=[];for(const f of files)all.push(...await parseWorkbook(f));if(!all.length)throw new Error('인식 가능한 DCM 데이터가 없습니다. 파일명/제목의 기준월과 회사·도도매명·사업자번호·연동 열을 확인해 주세요.');const pairs=new Set(all.map(r=>`${r.month}|||${r.outlet}`));data=data.filter(r=>!pairs.has(`${r.month}|||${r.outlet}`));const map=new Map(data.map(r=>[`${r.month}|||${r.outlet}|||${r.businessNo}`,r]));all.forEach(r=>map.set(`${r.month}|||${r.outlet}|||${r.businessNo}`,r));data=[...map.values()];saveData();refreshSelectors(false);render();const p=[...pairs].map(x=>x.split('|||')).sort();$('uploadMsg').textContent=`업데이트 완료: ${p.map(x=>`${monthLabel(x[0])} ${x[1]}`).join(', ')} · 실사업자 ${all.length.toLocaleString()}처 반영`;}
 function downloadCSV(rows,filename){const csv='\ufeff'+rows.map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\r\n');const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv;charset=utf-8'}));a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}
 function exportNeeds(){const cur=$('month').value,rows=L.needList(scope(cur));downloadCSV([['업체/권역','담당자','실사업자번호','실사업자명',...L.E,'X 평가처수'],...rows.map(r=>[r.outlet,r.manager,r.businessNo,r.businessName,...L.E.map(e=>r.statuses[e]||''),r.xCount])],`연동필요_${cur}.csv`);}
 function exportChanges(){const cur=$('month').value,prev=prevMonthOf(cur),ch=L.compare(prev?scope(prev):[],scope(cur)),type=$('changeType').value;let rr=[];if(type==='new')rr=ch.newSupply.map(r=>['신규 공급',r.outlet,r.manager,r.businessNo,r.businessName,r.entities.map(x=>`${x.entity}:${x.status}`).join('|'),'미공급→O/X']);if(type==='stop')rr=ch.stoppedSupply.map(r=>['공급 중단',r.outlet,r.manager,r.businessNo,r.businessName,r.entities.map(x=>`${x.entity}:기존${x.status}`).join('|'),'O/X→미공급']);if(type==='x2o')rr=ch.xToO.map(r=>['X→O 개선',r.outlet,r.manager,r.businessNo,r.businessName,r.entity,'X→O']);if(type==='o2x')rr=ch.oToX.map(r=>['O→X 해제',r.outlet,r.manager,r.businessNo,r.businessName,r.entity,'O→X']);downloadCSV([['구분','업체/권역','담당자','실사업자번호','실사업자명','법인/상태','변화'],...rr],`변동상세_${prev||'없음'}_${cur}.csv`);}
