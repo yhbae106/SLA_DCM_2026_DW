@@ -9,93 +9,16 @@ let master=false,pulling=false,saving=false;
 function endpoint(){return String(CFG.endpoint||'').trim();}
 function hash(v){try{return JSON.stringify(v||[]);}catch(e){return '';}}
 function password(){return sessionStorage.getItem(MASTER_KEY)||'';}
-function setStatus(text,state='idle'){
- const el=$('masterSyncStatus');if(!el)return;
- el.textContent=text;el.dataset.state=state;
-}
-function installStyles(){
- if($('masterSyncStyle'))return;
- const s=document.createElement('style');s.id='masterSyncStyle';s.textContent=`
- .master-sync{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;padding:10px 12px;border-radius:12px;background:#f7f9fc;border:1px solid #e6eaf0}
- .master-sync .master-label{font-weight:700;font-size:13px}.master-sync input{height:34px;padding:0 10px;border:1px solid #d8dee8;border-radius:8px;min-width:170px}.master-sync .master-state{font-size:12px;color:#667085}.master-sync .master-state[data-state="ok"]{color:#087a55;font-weight:700}.master-sync .master-state[data-state="error"]{color:#b42318;font-weight:700}.master-sync .master-state[data-state="working"]{color:#175cd3;font-weight:700}.master-sync .master-readonly{font-size:12px;padding:5px 8px;border-radius:999px;background:#eef2f6;color:#475467;font-weight:700}.master-sync .master-readonly.on{background:#ecfdf3;color:#067647}.master-only-locked{opacity:.55;pointer-events:none}
- `;document.head.appendChild(s);
-}
-function setMasterUI(on){
- master=!!on;
- const file=$('fileInput');if(file){file.disabled=!master;file.closest('.uploadbox')?.classList.toggle('master-only-locked',!master);}
- ['backupBtn','backupInput','resetBtn'].forEach(id=>{const el=$(id);if(el)el.disabled=!master;});
- const badge=$('masterModeBadge');if(badge){badge.textContent=master?'MASTER ON':'읽기 전용';badge.classList.toggle('on',master);}
- const login=$('masterLoginBtn');if(login)login.textContent=master?'마스터 종료':'마스터 로그인';
- const pw=$('masterPassword');if(pw){pw.disabled=master;if(master)pw.value='';}
-}
-function installUI(){
- installStyles();
- const filters=document.querySelector('.panel.filters');if(!filters||$('masterSyncBar'))return;
- const bar=document.createElement('div');bar.id='masterSyncBar';bar.className='master-sync';
- bar.innerHTML=`<span id="masterModeBadge" class="master-readonly">읽기 전용</span><span class="master-label">마스터 모드</span><input id="masterPassword" type="password" autocomplete="current-password" placeholder="마스터 비밀번호"><button class="btn" id="masterLoginBtn">마스터 로그인</button><button class="btn" id="masterRefreshBtn">공용 데이터 새로고침</button><span id="masterSyncStatus" class="master-state">공용 데이터 확인 중…</span>`;
- filters.appendChild(bar);
- $('masterLoginBtn')?.addEventListener('click',async()=>{
-   if(master){sessionStorage.removeItem(MASTER_KEY);setMasterUI(false);setStatus('마스터 모드를 종료했습니다.','idle');return;}
-   const pw=$('masterPassword')?.value||'';if(!pw){setStatus('비밀번호를 입력해 주세요.','error');return;}
-   try{setStatus('마스터 인증 중…','working');await login(pw);sessionStorage.setItem(MASTER_KEY,pw);setMasterUI(true);setStatus('마스터 인증 완료 · Excel 업로드 가능','ok');}
-   catch(e){sessionStorage.removeItem(MASTER_KEY);setMasterUI(false);setStatus(e.message||'마스터 인증 실패','error');}
- });
- $('masterPassword')?.addEventListener('keydown',e=>{if(e.key==='Enter')$('masterLoginBtn')?.click();});
- $('masterRefreshBtn')?.addEventListener('click',()=>pullRemote(true));
- setMasterUI(false);
-}
-async function request(payload){
- if(!endpoint())throw new Error('Apps Script URL이 설정되지 않았습니다.');
- const res=await fetch(endpoint(),{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});
- if(!res.ok)throw new Error(`HTTP ${res.status}`);const json=await res.json();if(!json.ok)throw new Error(json.error||'요청 실패');return json;
-}
+function setStatus(text,state='idle'){const el=$('masterSyncStatus');if(!el)return;el.textContent=text;el.dataset.state=state;}
+function installStyles(){if($('masterSyncStyle'))return;const s=document.createElement('style');s.id='masterSyncStyle';s.textContent=`.master-sync{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:10px;padding:10px 12px;border-radius:12px;background:#f7f9fc;border:1px solid #e6eaf0}.master-sync .master-label{font-weight:700;font-size:13px}.master-sync input{height:34px;padding:0 10px;border:1px solid #d8dee8;border-radius:8px;min-width:170px}.master-sync .master-state{font-size:12px;color:#667085}.master-sync .master-state[data-state="ok"]{color:#087a55;font-weight:700}.master-sync .master-state[data-state="error"]{color:#b42318;font-weight:700}.master-sync .master-state[data-state="working"]{color:#175cd3;font-weight:700}.master-sync .master-readonly{font-size:12px;padding:5px 8px;border-radius:999px;background:#eef2f6;color:#475467;font-weight:700}.master-sync .master-readonly.on{background:#ecfdf3;color:#067647}.master-only-locked{opacity:.55;pointer-events:none}`;document.head.appendChild(s);}
+function setMasterUI(on){master=!!on;const file=$('fileInput');if(file){file.disabled=!master;file.closest('.uploadbox')?.classList.toggle('master-only-locked',!master);}['backupBtn','backupInput','resetBtn'].forEach(id=>{const el=$(id);if(el)el.disabled=!master;});const badge=$('masterModeBadge');if(badge){badge.textContent=master?'MASTER ON':'읽기 전용';badge.classList.toggle('on',master);}const login=$('masterLoginBtn');if(login)login.textContent=master?'마스터 종료':'마스터 로그인';const pw=$('masterPassword');if(pw){pw.disabled=master;if(master)pw.value='';}}
+function installUI(){installStyles();const filters=document.querySelector('.panel.filters');if(!filters||$('masterSyncBar'))return;const bar=document.createElement('div');bar.id='masterSyncBar';bar.className='master-sync';bar.innerHTML=`<span id="masterModeBadge" class="master-readonly">읽기 전용</span><span class="master-label">마스터 모드</span><input id="masterPassword" type="password" autocomplete="current-password" placeholder="마스터 비밀번호"><button class="btn" id="masterLoginBtn">마스터 로그인</button><button class="btn" id="masterRefreshBtn">공용 데이터 새로고침</button><span id="masterSyncStatus" class="master-state">마스터 로그인 후 공용 데이터를 불러옵니다.</span>`;filters.appendChild(bar);$('masterLoginBtn')?.addEventListener('click',async()=>{if(master){sessionStorage.removeItem(MASTER_KEY);setMasterUI(false);setStatus('마스터 모드를 종료했습니다.','idle');return;}const pw=$('masterPassword')?.value||'';if(!pw){setStatus('비밀번호를 입력해 주세요.','error');return;}try{setStatus('마스터 인증 중…','working');await login(pw);sessionStorage.setItem(MASTER_KEY,pw);setMasterUI(true);setStatus('마스터 인증 완료 · 최신 공용 데이터 불러오는 중…','ok');await pullRemote(true);}catch(e){sessionStorage.removeItem(MASTER_KEY);setMasterUI(false);setStatus(e.message||'마스터 인증 실패','error');}});$('masterPassword')?.addEventListener('keydown',e=>{if(e.key==='Enter')$('masterLoginBtn')?.click();});$('masterRefreshBtn')?.addEventListener('click',()=>pullRemote(true));setMasterUI(false);}
+async function request(payload){if(!endpoint())throw new Error('Apps Script URL이 설정되지 않았습니다.');const res=await fetch(endpoint(),{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify(payload)});if(!res.ok)throw new Error(`HTTP ${res.status}`);const json=await res.json();if(!json.ok)throw new Error(json.error||'요청 실패');return json;}
 async function login(pw){return request({type:'masterLogin',password:pw});}
-async function saveRemote(){
- if(!master||saving)return;
- const pw=password();if(!pw)return;
- let data=[];try{data=JSON.parse(localStorage.getItem(DATA_KEY)||'[]');}catch(e){}
- if(!Array.isArray(data)||!data.length){setStatus('저장할 데이터가 없습니다.','error');return;}
- try{saving=true;setStatus('공용 데이터 저장 중…','working');const json=await request({type:'saveDashboard',password:pw,editor:'MASTER',data});sessionStorage.setItem(REMOTE_HASH_KEY,hash(data));setStatus(`공용 저장 완료 · ${Number(json.rowCount||data.length).toLocaleString()}처 · 모든 브라우저에 적용`,'ok');}
- catch(e){setStatus(`공용 저장 실패 · ${e.message}`,'error');}
- finally{saving=false;}
-}
-async function pullRemote(force=false){
- if(pulling||!endpoint())return;
- try{
-   pulling=true;setStatus('공용 데이터 확인 중…','working');
-   const url=new URL(endpoint());url.searchParams.set('type','dashboard');url.searchParams.set('_',Date.now());
-   const res=await fetch(url.toString(),{cache:'no-store'});if(!res.ok)throw new Error(`HTTP ${res.status}`);const json=await res.json();if(!json.ok)throw new Error(json.error||'공용 데이터 조회 실패');
-   const remote=Array.isArray(json.data)?json.data:[];
-   if(!remote.length){setStatus('공용 저장 데이터 없음 · 최초 마스터 업로드 필요','idle');return;}
-   const rh=hash(remote),local=(()=>{try{return JSON.parse(localStorage.getItem(DATA_KEY)||'[]')}catch(e){return []}})(),lh=hash(local);
-   const meta=json.updatedAt?` · ${new Date(json.updatedAt).toLocaleString('ko-KR')}`:'';
-   if(rh!==lh){
-     localStorage.setItem(DATA_KEY,JSON.stringify(remote));sessionStorage.setItem(REMOTE_HASH_KEY,rh);
-     if(force){setStatus(`최신 공용 데이터 반영${meta}`,'ok');location.reload();return;}
-     const reloadKey='dcm-dashboard-remote-reloaded';
-     if(sessionStorage.getItem(reloadKey)!==rh){sessionStorage.setItem(reloadKey,rh);location.reload();return;}
-   }
-   setStatus(`공용 최신 데이터 적용 중${meta}`,'ok');
- }catch(e){console.warn('[DCM Master Sync] pull failed',e);setStatus(`공용 데이터 연결 확인 필요 · ${e.message}`,'error');}
- finally{pulling=false;}
-}
-function observeExcelUpload(){
- const file=$('fileInput');if(!file)return;
- file.addEventListener('change',e=>{
-   if(!master){e.preventDefault();e.stopImmediatePropagation();file.value='';setStatus('Excel 업로드는 마스터만 가능합니다.','error');return;}
-   if(!e.target.files?.length)return;
-   setStatus('Excel 분석 및 반영 중…','working');
-   setTimeout(()=>{
-     const msg=$('uploadMsg')?.textContent||'';
-     if(msg.includes('업데이트 완료'))saveRemote();else if(msg.includes('실패'))setStatus('Excel 업로드 실패 · 공용 저장하지 않음','error');else setTimeout(saveRemote,900);
-   },900);
- },false);
-}
-function start(){
- installUI();observeExcelUpload();
- const saved=password();if(saved)login(saved).then(()=>{setMasterUI(true);setStatus('마스터 세션 유지 중','ok');}).catch(()=>{sessionStorage.removeItem(MASTER_KEY);setMasterUI(false);});
- pullRemote(false);
-}
+async function saveRemote(){if(!master||saving)return;const pw=password();if(!pw)return;let data=[];try{data=JSON.parse(localStorage.getItem(DATA_KEY)||'[]');}catch(e){}if(!Array.isArray(data)||!data.length){setStatus('저장할 데이터가 없습니다.','error');return;}try{saving=true;setStatus('공용 데이터 저장 중…','working');const json=await request({type:'saveDashboard',password:pw,editor:'MASTER',data});sessionStorage.setItem(REMOTE_HASH_KEY,hash(data));setStatus(`공용 저장 완료 · ${Number(json.rowCount||data.length).toLocaleString()}처 · 파트너 화면에도 반영`,'ok');}catch(e){setStatus(`공용 저장 실패 · ${e.message}`,'error');}finally{saving=false;}}
+async function pullRemote(force=false){if(pulling||!endpoint())return;if(!master||!password()){setStatus('마스터 로그인 후 공용 데이터를 불러올 수 있습니다.','idle');return;}try{pulling=true;setStatus('공용 데이터 확인 중…','working');const json=await request({type:'dashboardMaster',password:password()});const remote=Array.isArray(json.data)?json.data:[];if(!remote.length){setStatus('공용 저장 데이터 없음 · 최초 마스터 업로드 필요','idle');return;}const rh=hash(remote),local=(()=>{try{return JSON.parse(localStorage.getItem(DATA_KEY)||'[]')}catch(e){return []}})(),lh=hash(local);const meta=json.updatedAt?` · ${new Date(json.updatedAt).toLocaleString('ko-KR')}`:'';if(rh!==lh){localStorage.setItem(DATA_KEY,JSON.stringify(remote));sessionStorage.setItem(REMOTE_HASH_KEY,rh);if(force){setStatus(`최신 공용 데이터 반영${meta}`,'ok');location.reload();return;}const reloadKey='dcm-dashboard-remote-reloaded';if(sessionStorage.getItem(reloadKey)!==rh){sessionStorage.setItem(reloadKey,rh);location.reload();return;}}setStatus(`공용 최신 데이터 적용${meta}`,'ok');}catch(e){console.warn('[DCM Master Sync] pull failed',e);setStatus(`공용 데이터 연결 확인 필요 · ${e.message}`,'error');}finally{pulling=false;}}
+function observeExcelUpload(){const file=$('fileInput');if(!file)return;file.addEventListener('change',e=>{if(!master){e.preventDefault();e.stopImmediatePropagation();file.value='';setStatus('Excel 업로드는 마스터만 가능합니다.','error');return;}if(!e.target.files?.length)return;setStatus('Excel 분석 및 반영 중…','working');setTimeout(()=>{const msg=$('uploadMsg')?.textContent||'';if(msg.includes('업데이트 완료'))saveRemote();else if(msg.includes('실패'))setStatus('Excel 업로드 실패 · 공용 저장하지 않음','error');else setTimeout(saveRemote,900);},900);},false);}
+function start(){installUI();observeExcelUpload();const saved=password();if(saved)login(saved).then(()=>{setMasterUI(true);setStatus('마스터 세션 유지 중','ok');pullRemote(false);}).catch(()=>{sessionStorage.removeItem(MASTER_KEY);setMasterUI(false);});}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(start,150),{once:true});else setTimeout(start,150);
 window.DCMMasterSync={pull:()=>pullRemote(true),save:saveRemote,isMaster:()=>master,logout:()=>{sessionStorage.removeItem(MASTER_KEY);setMasterUI(false);}};
 })();
