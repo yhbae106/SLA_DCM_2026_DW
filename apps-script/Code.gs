@@ -4,6 +4,7 @@ const DCM_CONFIG_SHEET = 'Config';
 const DCM_HISTORY_SHEET = 'History';
 const DCM_DATA_SHEET = 'Dashboard Data';
 const DCM_DATA_META_SHEET = 'Dashboard Meta';
+const DCM_PARTNERS = ['백제약품','인천약품','복산나이스','아이팜코리아','유진약품'];
 
 function doGet(e) {
   try {
@@ -22,6 +23,11 @@ function doPost(e) {
     if (body.type === 'masterLogin') {
       assertMasterPassword_(body.password);
       return json_({ok:true});
+    }
+    if (body.type === 'partnerLogin' || body.type === 'partnerDashboard') {
+      const partner = normalizePartner_(body.partner);
+      assertPartnerPassword_(partner, body.password);
+      return json_({ok:true, partner:partner, ...loadPartnerDashboardData_(partner)});
     }
     if (body.type === 'saveDashboard') {
       assertMasterPassword_(body.password);
@@ -61,6 +67,19 @@ function setMasterPassword() {
   ui.alert('마스터 비밀번호가 저장되었습니다.');
 }
 
+function setPartnerPassword() {
+  const ui = SpreadsheetApp.getUi();
+  const p = ui.prompt('파트너 접속코드 설정', '업체명을 정확히 입력하세요: ' + DCM_PARTNERS.join(', '), ui.ButtonSet.OK_CANCEL);
+  if (p.getSelectedButton() !== ui.Button.OK) return;
+  const partner = normalizePartner_(p.getResponseText());
+  const c = ui.prompt(partner + ' 접속코드 설정', '외부 업체에 전달할 접속코드를 6자 이상 입력하세요.', ui.ButtonSet.OK_CANCEL);
+  if (c.getSelectedButton() !== ui.Button.OK) return;
+  const password = c.getResponseText().trim();
+  if (!password || password.length < 6) throw new Error('파트너 접속코드는 6자 이상으로 설정하세요.');
+  PropertiesService.getScriptProperties().setProperty(partnerPasswordKey_(partner), password);
+  ui.alert(partner + ' 접속코드가 저장되었습니다.');
+}
+
 function setupDcmActionSync() {
   const ss = SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
   let hist = ss.getSheetByName(DCM_HISTORY_SHEET);
@@ -86,6 +105,38 @@ function assertMasterPassword_(password) {
   const expected = PropertiesService.getScriptProperties().getProperty('DCM_MASTER_PASSWORD');
   if (!expected) throw new Error('Apps Script의 DCM_MASTER_PASSWORD가 설정되지 않았습니다.');
   if (!password || password !== expected) throw new Error('마스터 비밀번호가 올바르지 않습니다.');
+}
+
+function normalizePartner_(partner) {
+  const p = String(partner || '').trim();
+  if (DCM_PARTNERS.indexOf(p) < 0) throw new Error('지원하지 않는 파트너사입니다.');
+  return p;
+}
+
+function partnerPasswordKey_(partner) {
+  return 'DCM_PARTNER_PASSWORD_' + Utilities.base64EncodeWebSafe(partner, Utilities.Charset.UTF_8).replace(/=+$/,'');
+}
+
+function assertPartnerPassword_(partner, password) {
+  const expected = PropertiesService.getScriptProperties().getProperty(partnerPasswordKey_(partner));
+  if (!expected) throw new Error(partner + ' 접속코드가 아직 설정되지 않았습니다.');
+  if (!password || password !== expected) throw new Error('업체명 또는 접속코드가 올바르지 않습니다.');
+}
+
+function partnerOfOutlet_(outlet) {
+  const s = String(outlet || '');
+  if (s.indexOf('백제') >= 0) return '백제약품';
+  if (s.indexOf('인천') >= 0) return '인천약품';
+  if (s.indexOf('복산') >= 0) return '복산나이스';
+  if (s.indexOf('아이팜') >= 0 || s.indexOf('동보') >= 0) return '아이팜코리아';
+  if (s.indexOf('유진') >= 0) return '유진약품';
+  return '';
+}
+
+function loadPartnerDashboardData_(partner) {
+  const all = loadDashboardData_();
+  const filtered = (all.data || []).filter(r => partnerOfOutlet_(r.outlet) === partner);
+  return {data:filtered, updatedAt:all.updatedAt, updatedBy:all.updatedBy, rowCount:filtered.length};
 }
 
 function ensureDashboardSheets_() {
