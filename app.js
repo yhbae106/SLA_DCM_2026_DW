@@ -1,6 +1,7 @@
 (()=>{
 'use strict';
-const L=window.DCMLogic,CFG=window.DCM_CONFIG,STORAGE_KEY='dcm-dashboard-v8-data';let data=loadData();const $=id=>document.getElementById(id);
+const L=window.DCMLogic,CFG=window.DCM_CONFIG,STORAGE_KEY='dcm-dashboard-v8-data',XLSX_URL='https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';let data=loadData(),xlsxPromise=null;const $=id=>document.getElementById(id);
+function ensureXLSX(){if(window.XLSX)return Promise.resolve(window.XLSX);if(xlsxPromise)return xlsxPromise;xlsxPromise=new Promise((resolve,reject)=>{const s=document.createElement('script');s.src=XLSX_URL;s.async=true;s.onload=()=>resolve(window.XLSX);s.onerror=()=>{xlsxPromise=null;reject(new Error('Excel 모듈 로딩 실패 · 네트워크/방화벽을 확인해 주세요.'));};document.head.appendChild(s);});return xlsxPromise;}
 function clone(x){return JSON.parse(JSON.stringify(x));}
 function loadData(){try{const raw=localStorage.getItem(STORAGE_KEY);if(raw){const obj=JSON.parse(raw);if(Array.isArray(obj)&&obj.length)return obj;}}catch(e){}return clone(window.DCM_BASE_DATA||[]);}
 function saveData(){localStorage.setItem(STORAGE_KEY,JSON.stringify(data));}
@@ -34,7 +35,7 @@ function findHeaderRow(aoa,required){for(let r=0;r<Math.min(aoa.length,20);r++){
 function detectMonth(file,sh,aoa){const y=fileYear(file.name);return monthFromText(file.name,y)||monthFromText(aoa?.[0]?.[0],y)||monthFromText(aoa?.[2]?.[0],y)||monthFromText(sh,y);}
 function mergeStatus(rec,e,v){if(!e||!v)return;rec.statuses[e]=(rec.statuses[e]&&rec.statuses[e]!==v)?'X':v;}
 async function parseWorkbook(file){
- if(!window.XLSX)throw new Error('Excel 읽기 라이브러리를 불러오지 못했습니다. 인터넷 연결 또는 사내 방화벽을 확인해 주세요.');
+ await ensureXLSX();
  const wb=XLSX.read(await file.arrayBuffer(),{type:'array'}),out=[];
  wb.SheetNames.forEach(sh=>{
   const aoa=XLSX.utils.sheet_to_json(wb.Sheets[sh],{header:1,defval:null,raw:true});if(!aoa.length)return;
