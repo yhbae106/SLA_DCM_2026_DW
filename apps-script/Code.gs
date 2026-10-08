@@ -5,6 +5,13 @@ const DCM_HISTORY_SHEET = 'History';
 const DCM_DATA_SHEET = 'Dashboard Data';
 const DCM_DATA_META_SHEET = 'Dashboard Meta';
 const DCM_PARTNERS = ['백제약품','인천약품','복산나이스','아이팜코리아','유진약품'];
+const DCM_PARTNER_ACTION_HEADERS = ['업체 원인','업체 조치계획','업체 Due','업체 상태','업체 수정자','업체 수정시간','업체 수정필드'];
+const DCM_PARTNER_ACTION_FIELDS = ['reasonCode','plan','dueDate','status'];
+const DCM_REASON_DEFAULTS = {
+  '01':'ERP/시스템 미구축','02':'도입 품목 미연동','03':'전산/데이터 오류',
+  '04':'거래처 연동 거부/미협조','05':'공급·거래 중단 예정',
+  '06':'신규 거래처 연동 예정','07':'당월 매출 미발생','08':'도매몰 연동 필요'
+};
 
 function doGet(e) {
   try {
@@ -33,10 +40,11 @@ function doPost(e) {
       assertPartnerPassword_(partner, body.password);
       return json_({ok:true, partner:partner, ...loadPartnerDashboardData_(partner)});
     }
-    if (body.type === 'partnerActions') {
+    if (body.type === 'partnerActions' || body.type === 'partnerSaveAction') {
       const partner = normalizePartner_(body.partner);
       assertPartnerPassword_(partner, body.password);
-      return json_({ok:true, ...loadPartnerActions_(partner)});
+      if (body.type === 'partnerActions') return json_({ok:true, ...loadPartnerActions_(partner)});
+      return json_({ok:true, ...withActionLock_(function(){return savePartnerAction_(partner,body);})});
     }
     if (body.type === 'saveDashboard') {
       assertMasterPassword_(body.password);
@@ -98,11 +106,8 @@ function setupDcmActionSync() {
     hist.getRange(1,1,1,11).setValues([['eventId','key','업체/권역','사업자번호','실사업자명','담당자','변경필드','이전값','변경값','수정자','수정시간']]);
   }
   ensureDashboardSheets_();
-  if (!Object.keys(loadReasons_()).length) syncReasons_({
-    '01':'ERP/시스템 미구축','02':'도입 품목 미연동','03':'전산/데이터 오류','04':'거래처 연동 거부/미협조',
-    '05':'공급·거래 중단 예정','06':'신규 거래처 연동 예정','07':'당월 매출 미발생'
-  });
-  else refreshReasonValidation_();
+  refreshReasonValidation_();
+  ensurePartnerActionColumns_(ss.getSheetByName(DCM_SHEET));
 }
 
 function assertToken_(token) {
@@ -162,9 +167,86 @@ function loadPartnerActions_(partner) {
   const visible=shared.actions.filter(a => partnerOfOutlet_(a.outlet || String(a.key || '').split('|||')[0]) === partner)
     .map(a => ({key:a.key,businessNo:a.businessNo,priority:a.priority,businessName:a.businessName,
       outlet:a.outlet,manager:canonicalManager_(a.outlet,a.manager),aging:a.aging,reasonCode:a.reasonCode,
-      plan:a.plan,dueDate:a.dueDate,status:a.status,modifiedBy:a.modifiedBy,updatedAt:a.updatedAt}));
+      plan:a.plan,dueDate:a.dueDate,status:a.status,modifiedBy:a.modifiedBy,updatedAt:a.updatedAt,
+      partnerAction:a.partnerAction||null}));
   return {actions:visible,reasons:loadReasons_(),updatedAt:shared.updatedAt,updatedBy:shared.updatedBy};
 }
+
+/* A:M: master only. N:T: independent Partner entries. */
+function ensurePartnerActionColumns_(sh) {
+  if (!sh) throw new Error('Action Board 시트를 찾을 수 없습니다.');
+  const start=14, headers=DCM_PARTNER_ACTION_HEADERS;
+  if (sh.getMaxColumns() < 20) sh.insertColumnsAfter(sh.getMaxColumns(),20-sh.getMaxColumns());
+  const range=sh.getRange(1,start,1,headers.length);
+  const current=range.getDisplayValues()[0];
+  if (current.some((v,i)=>String(v||'').trim() && String(v).trim()!==headers[i])) {
+    throw new Error('Action Board N:T 열에 다른 데이터 헤더가 있습니다. 기존 내용을 확인해 주세요.');
+  }
+  if (current.some((v,i)=>v!==headers[i])) range.setValues([headers]);
+}
+function partnerEditedFields_(cell) {
+  try {
+    const fields=JSON.parse(String(cell||'[]'));
+    return Array.isArray(fields)?DCM_PARTNER_ACTION_FIELDS.filter(f=>fields.includes(f)):[];
+  }catch(err){return [];}
+}
+function partnerActionFromCells_(row, reasonDict) {
+  const fields=partnerEditedFields_(row[19]);
+  if (!fields.length) return null;
+  return {
+    reasonCode:fields.includes('reasonCode')?reasonCode_(row[13],reasonDict):'',
+    plan:fields.includes('plan')?String(row[14]||''):'',
+    dueDate:fields.includes('dueDate')?normalizeDate_(row[15]):'',
+    status:fields.includes('status')?(row[16]?statusCode_(row[16]):''):'',
+    modifiedBy:row[17]||'',updatedAt:row[18]||'',editedFields:fields
+  };
+}
+function safeSheetText_(raw) {
+  const value=String(raw == null?'':raw);
+  return /^[=+\-@]/.test(value)?("'"+value):value;
+}
+function savePartnerAction_(partner, body) {
+  const key=String(body.key||''),parts=key.split('|||'),field=String(body.field||'');
+  if(parts.length!==2 || !parts[0] || !parts[1] || key.length>240 ||
+      partnerOfOutlet_(parts[0])!==partner) throw new Error('업체에 속하지 않는 거래처입니다.');
+  if(!DCM_PARTNER_ACTION_FIELDS.includes(field)) throw new Error('수정할 수 없는 필드입니다.');
+  const value=String(body.value == null?'':body.value);
+  if(value.length>3000) throw new Error('입력 내용은 최대 3000자입니다.');
+  if(field==='reasonCode' && value) {
+    if (!Object.prototype.hasOwnProperty.call(loadReasons_(),value)) throw new Error('허용되지 않은 원인코드입니다.');
+  }
+  if(field==='dueDate' && value && !/^\d{4}-\d{2}-\d{2}$/.test(value))throw new Error('기한은 YYYY-MM-DD 형식이어야 합니다.');
+  if(field==='status' && value && !['TODO','IN_PROGRESS','WAITING','DONE'].includes(value))throw new Error('허용되지 않은 진행상태입니다.');
+  const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID),sh=ss.getSheetByName(DCM_SHEET);
+  ensurePartnerActionColumns_(sh);
+  const total=sh.getLastRow();
+  const keys=total>=2?sh.getRange(2,1,total-1,1).getDisplayValues():[];
+  const offset=keys.findIndex(r=>r[0]===key);
+  let rowNumber=offset<0?0:offset+2;
+  if(!rowNumber) {
+    const dash=ss.getSheetByName(DCM_DATA_SHEET),cnt=dash?.getLastRow()||0;
+    const records=cnt>=2?dash.getRange(2,1,cnt-1,9).getDisplayValues():[];
+    const matches=records.filter(r=>r[1]===parts[0]&&r[3]===parts[1]);
+    if(!matches.length)throw new Error('마스터 데이터에 없는 거래처입니다.');
+    const last=matches[matches.length-1];
+    if(![last[5],last[6],last[7]].some(v=>String(v).trim().toUpperCase()==='X'))
+      throw new Error('현재 연동 필요 대상이 아닙니다.');
+    const fixed=[key,last[3],'',last[4],last[1],canonicalManager_(last[1],last[2]),'', '', '', '', '', '', ''];
+    rowNumber=sh.getLastRow()+1;sh.getRange(rowNumber,1,1,13).setValues([fixed]);
+  }
+  const row=sh.getRange(rowNumber,14,1,7).getDisplayValues()[0];
+  const idx=DCM_PARTNER_ACTION_FIELDS.indexOf(field);
+  const dictionary=field==='reasonCode'?loadReasons_():null;
+  row[idx]=field==='reasonCode'?(value?value+' '+dictionary[value]:'') :
+           field==='plan'?safeSheetText_(value):value;
+  const now=Utilities.formatDate(new Date(),'Asia/Seoul',"yyyy-MM-dd'T'HH:mm:ssXXX");
+  row[4]='업체:'+partner;row[5]=now;
+  const edited=new Set(partnerEditedFields_(row[6]));edited.add(field);row[6]=JSON.stringify([...edited]);
+  sh.getRange(rowNumber,14,1,7).setValues([row]);
+  SpreadsheetApp.flush();
+  return {key:key,field:field,value:value,updatedAt:now,modifiedBy:row[4]};
+}
+
 function ensureDashboardSheets_() {
   const ss = SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
   let sh = ss.getSheetByName(DCM_DATA_SHEET);
@@ -253,142 +335,155 @@ function loadActions_(includeHistory) {
   }
   const last = sh.getLastRow();
   if (last < 2) return {actions:[], updatedBy:'', updatedAt:''};
-  const values = sh.getRange(2,1,last-1,13).getDisplayValues();
+  // Existing legacy Action Board may still have fewer than 20 columns before setup runs.
+  const width=Math.min(20,sh.getMaxColumns());
+  const values=sh.getRange(2,1,last-1,width).getDisplayValues().map(r=>r.concat(Array(20-r.length).fill('')));
   const actions = [], reasonDict = loadReasons_();
   let latestAt = '', latestBy = '';
   values.forEach(r => {
     const key = r[0]; if (!key) return;
     const updatedAt = r[12] || '';
     if (updatedAt && (!latestAt || updatedAt > latestAt)) { latestAt = updatedAt; latestBy = r[11] || ''; }
+    if (r[18] && (!latestAt || r[18] > latestAt)) { latestAt=r[18];latestBy=r[17]||''; }
     actions.push({
       key:key, businessNo:r[1] || '', priority:r[2] || '', businessName:r[3] || '', outlet:r[4] || '', manager:canonicalManager_(r[4],r[5]), aging:r[6] || '',
-      reasonCode:reasonCode_(r[7], reasonDict), plan:r[8] || '', dueDate:normalizeDate_(r[9]), status:statusCode_(r[10]), modifiedBy:r[11] || '', updatedAt:r[12] || '', history:historyMap[key] || []
+      reasonCode:reasonCode_(r[7], reasonDict), plan:r[8] || '', dueDate:normalizeDate_(r[9]), status:statusCode_(r[10]), modifiedBy:r[11] || '', updatedAt:r[12] || '', partnerAction:partnerActionFromCells_(r,reasonDict), history:historyMap[key] || []
     });
   });
   return {actions:actions, updatedBy:latestBy, updatedAt:latestAt};
 }
 
 function saveActions_(actions, editor, mode) {
-  const ss = SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
-  const sh = ss.getSheetByName(DCM_SHEET);
-  const last = sh.getLastRow();
-  const existing = last >= 2 ? sh.getRange(2,1,last-1,13).getDisplayValues() : [];
-  const rowByKey = new Map();
-  existing.forEach((r,i) => { if (r[0]) rowByKey.set(r[0], {row:i+2, values:r}); });
-  // Risk snapshots are metadata-only. Never rewrite H:M or user-entered action fields.
-  // Writing the entire A:M range used to trigger H-cell validation failures on legacy labels.
-  if (mode === 'snapshot') {
-    let changedRows = 0;
-    actions.forEach(a => {
-      if (!a || !a.key) return;
-      const found = rowByKey.get(a.key);
-      const parts = String(a.key).split('|||');
-      const fixed = [a.key, a.businessNo || (found ? found.values[1] : '') || parts[1] || '',
-        a.priority || (found ? found.values[2] : '') || '',
-        a.businessName || (found ? found.values[3] : '') || '',
-        a.outlet || (found ? found.values[4] : '') || parts[0] || '',
-        canonicalManager_(a.outlet || (found ? found.values[4] : '') || parts[0] || '', a.manager || (found ? found.values[5] : '') || ''),
-        a.aging || (found ? found.values[6] : '') || ''];
-      if (found) {
-        if (fixed.some((v,i) => String(v) !== String(found.values[i] || ''))) {
-          sh.getRange(found.row,1,1,7).setValues([fixed]);
-          changedRows++;
-        }
-      } else {
-        const next = fixed.concat(Array(6).fill(''));
-        sh.getRange(sh.getLastRow()+1,1,1,13).setValues([next]);
-        rowByKey.set(a.key,{row:sh.getLastRow(),values:next});
-        changedRows++;
-      }
-    });
-    return {updatedBy:'',updatedAt:'',changedRows:changedRows};
-  }
-  // Allow old reason labels to remain in existing rows, even after Config changes.
-  // Data validation should assist data entry, not invalidate historical edits.
-  refreshReasonValidation_();
-  const nowIso = Utilities.formatDate(new Date(), 'Asia/Seoul', "yyyy-MM-dd'T'HH:mm:ssXXX");
-  const historyRows = [];
-  let changedRows = 0;
-  let latestBy = '';
-  let latestAt = '';
-  actions.forEach(a => {
-    if (!a || !a.key) return;
-    const found = rowByKey.get(a.key);
-    const prev = found ? found.values : Array(13).fill('');
-    const outlet = a.outlet || prev[4] || String(a.key).split('|||')[0] || '';
-    const businessNo = a.businessNo || prev[1] || String(a.key).split('|||')[1] || '';
-    const fixed = [a.key,businessNo,a.priority || prev[2] || '',a.businessName || prev[3] || '',outlet,canonicalManager_(outlet,a.manager || prev[5] || ''),a.aging || prev[6] || ''];
-    const editable = [reasonText_(a.reasonCode),a.plan || '',a.dueDate || '',statusLabel_(a.status)];
-    const fixedChanged = !found || fixed.some((v,i)=>String(prev[i]||'')!==String(v||''));
-    const editableIndexes = [7,8,9,10];
-    const editableChanged = found && editableIndexes.some((idx,i)=>String(prev[idx]||'')!==String(editable[i]||''));
-    const hasUserContent = !!(a.reasonCode || a.plan || a.dueDate || (a.status && a.status !== 'TODO'));
-    const stampEdit = editableChanged || (!found && hasUserContent && mode !== 'snapshot');
-    const nextEditor = stampEdit ? (editor || a.modifiedBy || prev[11] || '') : (prev[11] || '');
-    const nextTime = stampEdit ? nowIso : (prev[12] || '');
-    const next = [...fixed, ...editable, nextEditor, nextTime];
-    if (editableChanged) {
-      editableIndexes.forEach((idx,i) => {
-        if (String(prev[idx] || '') !== String(editable[i] || '')) historyRows.push([Utilities.getUuid(),a.key,outlet,businessNo,next[3] || '',next[5] || '',['원인','조치계획','Due','상태'][i],prev[idx] || '',editable[i] || '',editor || a.modifiedBy || '',nowIso]);
-      });
+  const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID),sh=ss.getSheetByName(DCM_SHEET);
+  if(!sh)throw new Error('Action Board 시트가 없습니다.');
+  const last=sh.getLastRow(),prior=last>=2?sh.getRange(2,1,last-1,13).getDisplayValues():[];
+  const rowByKey=new Map();
+  prior.forEach((r,i)=>{if(r[0])rowByKey.set(r[0],{row:i+2,values:r});});
+  const isSnapshot=mode==='snapshot';
+  const reasons=isSnapshot?null:loadReasons_();
+  const nowIso=Utilities.formatDate(new Date(),'Asia/Seoul',"yyyy-MM-dd'T'HH:mm:ssXXX");
+  const historyRows=[];
+  let changedRows=0,latestAt='',latestBy='',reasonRuleReady=false;
+  (actions||[]).forEach(function(a){
+    if(!a||!a.key)return;
+    const found=rowByKey.get(a.key),parts=String(a.key).split('|||'),prev=found?found.values:Array(13).fill('');
+    const outlet=String(a.outlet||prev[4]||parts[0]||''),businessNo=String(a.businessNo||prev[1]||parts[1]||'');
+    const fixed=[a.key,businessNo,a.priority||prev[2]||'',a.businessName||prev[3]||'',
+      outlet,canonicalManager_(outlet,a.manager||prev[5]||''),a.aging||prev[6]||''];
+    let row=found?found.row:sh.getLastRow()+1;
+    let changed=!found;
+    // The H:K columns belong to master Action content. Never rewrite H when only I/K/A:G changed.
+    if(!found){
+      sh.getRange(row,1,1,7).setValues([fixed]);
+      rowByKey.set(a.key,{row:row,values:fixed.concat(Array(6).fill(''))});
+    }else if(fixed.some((v,i)=>String(v||'')!==String(prev[i]||''))){
+      sh.getRange(row,1,1,7).setValues([fixed]);
+      changed=true;
     }
-    const rowChanged = !found || fixedChanged || editableChanged;
-    if (!rowChanged) return;
-    changedRows++;
-    if (stampEdit) { latestBy = nextEditor; latestAt = nextTime; }
-    if (found) sh.getRange(found.row,1,1,13).setValues([next]);
-    else { sh.appendRow(next); rowByKey.set(a.key,{row:sh.getLastRow(),values:next}); }
+    if(isSnapshot){if(changed)changedRows++;return;}
+    const hasFieldList=Array.isArray(a.changedFields);
+    const editableFields=hasFieldList
+      ?DCM_PARTNER_ACTION_FIELDS.filter(f=>a.changedFields.includes(f))
+      :DCM_PARTNER_ACTION_FIELDS.filter(f=>Object.prototype.hasOwnProperty.call(a,f));
+    const selected={reasonCode:a.reasonCode,plan:a.plan,dueDate:a.dueDate,status:a.status};
+    const idxByField={reasonCode:7,plan:8,dueDate:9,status:10};
+    let edited=false;
+    editableFields.forEach(function(field){
+      const idx=idxByField[field],old=String(prev[idx]||''),raw=selected[field]==null?'':String(selected[field]);
+      let value='';
+      if(field==='reasonCode'){
+        // Never rewrite a historical H cell solely because a label changed in Config.
+        const oldCode=reasonCode_(old,reasons);
+        if(!hasFieldList && raw==='' && old) return; // Guard older browsers with stale cached selections.
+        if(raw && !Object.prototype.hasOwnProperty.call(reasons,raw))throw new Error('원인코드 '+raw+'가 Config에 등록되지 않았습니다.');
+        if(oldCode===raw && (old||raw===''))return;
+        value=raw?reasonText_(raw,reasons):'';
+        if(!reasonRuleReady){refreshReasonValidation_();reasonRuleReady=true;}
+      }else if(field==='status'){
+        if(raw && !['TODO','IN_PROGRESS','WAITING','DONE'].includes(raw))throw new Error('유효하지 않은 Action 상태입니다.');
+        value=statusLabel_(raw||'TODO');
+        if(!old && !hasFieldList && raw==='TODO')return;
+      }else if(field==='dueDate'){
+        if(raw && !/^\d{4}-\d{2}-\d{2}$/.test(raw))throw new Error('Due 입력형식은 YYYY-MM-DD이어야 합니다.');
+        value=raw;
+      }else {
+        if(raw.length>3000)throw new Error('조치계획은 최대 3000자입니다.');
+        value=safeSheetText_(raw);
+      }
+      if(old===value)return;
+      // Only the changed cell: prevents legacy invalid H31/H110 from aborting an unrelated edit.
+      sh.getRange(row,idx+1).setValue(value);
+      historyRows.push([Utilities.getUuid(),a.key,outlet,businessNo,fixed[3],fixed[5],
+        ({reasonCode:'원인',plan:'조치계획',dueDate:'Due',status:'상태'})[field],old,value,editor||a.modifiedBy||'',nowIso]);
+      edited=true;changed=true;
+    });
+    if(edited){
+      const nextEditor=String(editor||a.modifiedBy||prev[11]||'');
+      sh.getRange(row,12,1,2).setValues([[nextEditor,nowIso]]);
+      latestAt=nowIso;latestBy=nextEditor;
+    }
+    if(changed)changedRows++;
   });
-  if (historyRows.length) {
-    let hist = ss.getSheetByName(DCM_HISTORY_SHEET);
-    if (!hist) { setupDcmActionSync(); hist = ss.getSheetByName(DCM_HISTORY_SHEET); }
+  if(historyRows.length){
+    let hist=ss.getSheetByName(DCM_HISTORY_SHEET);
+    if(!hist){setupDcmActionSync();hist=ss.getSheetByName(DCM_HISTORY_SHEET);}
     hist.getRange(hist.getLastRow()+1,1,historyRows.length,11).setValues(historyRows);
   }
-  return {updatedBy:latestBy, updatedAt:latestAt, changedRows:changedRows};
+  return {updatedAt:latestAt,updatedBy:latestBy,changedRows:changedRows};
 }
 
 function syncReasons_(reasons) {
-  const ss = SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
-  const sh = ss.getSheetByName(DCM_SHEET);
-  let cfg = ss.getSheetByName(DCM_CONFIG_SHEET);
-  if (!cfg) { cfg = ss.insertSheet(DCM_CONFIG_SHEET); cfg.hideSheet(); }
-  const entries = Object.keys(reasons).sort().map(k => [k, reasons[k]]);
-  const current = cfg.getLastRow() >= 2 ? cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues() : [];
-  if (JSON.stringify(current) !== JSON.stringify(entries)) {
-    cfg.clearContents(); cfg.getRange(1,1,1,2).setValues([['code','label']]); if (entries.length) cfg.getRange(2,1,entries.length,2).setValues(entries);
-  }
-  const labels = entries.map(x => `${x[0]} ${x[1]}`);
-  if (labels.length) sh.getRange('H2:H1000').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(labels, true).setAllowInvalid(true).build());
+  const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
+  let cfg=ss.getSheetByName(DCM_CONFIG_SHEET);
+  if(!cfg){cfg=ss.insertSheet(DCM_CONFIG_SHEET);cfg.hideSheet();}
+  const existing=cfg.getLastRow()>=2?cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues():[];
+  const current=new Map(existing.map(r=>[String(r[0]||'').trim(),String(r[1]||'').trim()]));
+  if(cfg.getLastRow()<1)cfg.getRange(1,1,1,2).setValues([['code','label']]);
+  const incoming={...DCM_REASON_DEFAULTS,...(reasons||{})};
+  const add=Object.entries(incoming).filter(([code,label])=>/^\d{2}$/.test(code)&&String(label||'').trim()&&!current.has(code));
+  if(add.length)cfg.getRange(cfg.getLastRow()+1,1,add.length,2).setValues(add);
+  refreshReasonValidation_();
 }
-
 function loadReasons_() {
-  const sh=SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_CONFIG_SHEET);
-  const reasons={};
-  if (!sh||sh.getLastRow()<2) return reasons;
-  sh.getRange(2,1,sh.getLastRow()-1,2).getDisplayValues().forEach(row=>{
-    const code=String(row[0]||'').trim(),label=String(row[1]||'').trim();
-    if(code&&label&&!Object.prototype.hasOwnProperty.call(reasons,code))reasons[code]=label;
+  // Include the default vocabulary even if an older Config tab only holds codes 01–07.
+  const dictionary={...DCM_REASON_DEFAULTS},cfg=SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_CONFIG_SHEET);
+  if(cfg&&cfg.getLastRow()>=2)cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues().forEach(r=>{
+    const code=String(r[0]||'').trim(),label=String(r[1]||'').trim();
+    if(/^\d{2}$/.test(code)&&label)dictionary[code]=label;
   });
-  return reasons;
+  return dictionary;
 }
 function refreshReasonValidation_() {
-  const sh=SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_SHEET);
+  const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID),sh=ss.getSheetByName(DCM_SHEET);
   if(!sh)return;
-  const reasons=loadReasons_(),labels=Object.keys(reasons).map(k=>k+' '+reasons[k]);
-  const range=sh.getRange('H2:H1000');
-  if(labels.length)range.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(labels,true).setAllowInvalid(false).build());
-  else range.clearDataValidations();
+  const dict=loadReasons_(),cfg=ss.getSheetByName(DCM_CONFIG_SHEET);
+  // Add only missing codes; do not replace user-customized Config labels.
+  if(cfg){
+    const existing=cfg.getLastRow()>=2?cfg.getRange(2,1,cfg.getLastRow()-1,1).getDisplayValues().map(r=>String(r[0]).trim()):[];
+    const missing=Object.entries(dict).filter(([c])=>!existing.includes(c));
+    if(missing.length)cfg.getRange(cfg.getLastRow()+1,1,missing.length,2).setValues(missing);
+  }
+  const labels=Object.entries(dict).map(([c,t])=>c+' '+t);
+  // Warning-only validation permits historical labels in H31/H110; the API still validates new values.
+  const rule=SpreadsheetApp.newDataValidation().requireValueInList(labels,true).setAllowInvalid(true).build();
+  const last=Math.max(sh.getLastRow(),1000);
+  sh.getRange(2,8,last-1,1).setDataValidation(rule);
+}
+function repairActionReasonValidation() {
+  refreshReasonValidation_();
+  return '원인코드 01~08 및 기존 값 수용 규칙 복구 완료';
 }
 function reasonCode_(text, cachedReasons) {
   const str=String(text||'').trim(),reasons=cachedReasons||loadReasons_();
   return Object.keys(reasons).sort((a,b)=>b.length-a.length).find(k=>str===k||str.startsWith(k+' '))||'';
 }
-function reasonText_(code) {
-  const cfg = SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_CONFIG_SHEET);
-  if (!code || !cfg || cfg.getLastRow() < 2) return '';
-  const vals = cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues();
-  const row = vals.find(r => r[0] === String(code)); return row ? `${row[0]} ${row[1]}` : String(code);
+function reasonText_(code, cachedReasons) {
+  if(!code)return '';
+  const reasons=cachedReasons||loadReasons_();
+  return Object.prototype.hasOwnProperty.call(reasons,code)?code+' '+reasons[code]:String(code);
 }
+
+
 function statusLabel_(s) { return ({TODO:'미조치',IN_PROGRESS:'진행중',WAITING:'업체회신',DONE:'완료'})[s] || (s || '미조치'); }
 function statusCode_(s) { return ({'미조치':'TODO','진행중':'IN_PROGRESS','업체회신':'WAITING','완료':'DONE'})[s] || (s || 'TODO'); }
 function normalizeDate_(s) { const m=String(s||'').match(/\d{4}-\d{2}-\d{2}/); return m?m[0]:String(s||''); }

@@ -31,7 +31,7 @@ function rowKey(r){return `${r.outlet}|||${r.businessNo}`;}
 function months(data){return [...new Set(data.map(r=>r.month).filter(Boolean))].sort();}
 function currentMonth(data){return $('month')?.value||months(data).slice(-1)[0]||null;}
 function scoped(data,m){const manager=$('manager')?.value||'전체',outlet=$('outlet')?.value||'전체';return data.filter(r=>r.month===m&&(manager==='전체'||r.manager===manager)&&(outlet==='전체'||r.outlet===outlet));}
-function stableActions(actions){return (actions||[]).map(a=>({key:a.key||'',priority:a.priority||'',businessName:a.businessName||'',outlet:a.outlet||'',manager:a.manager||'',aging:a.aging||'',reasonCode:a.reasonCode||'',plan:a.plan||'',dueDate:a.dueDate||'',status:a.status||'TODO',modifiedBy:a.modifiedBy||'',updatedAt:a.updatedAt||''})).sort((a,b)=>String(a.key).localeCompare(String(b.key)));}
+function stableActions(actions){return (actions||[]).map(a=>({key:a.key||'',priority:a.priority||'',businessName:a.businessName||'',outlet:a.outlet||'',manager:a.manager||'',aging:a.aging||'',reasonCode:a.reasonCode||'',plan:a.plan||'',dueDate:a.dueDate||'',status:a.status||'TODO',modifiedBy:a.modifiedBy||'',updatedAt:a.updatedAt||'',partnerAction:a.partnerAction||null})).sort((a,b)=>String(a.key).localeCompare(String(b.key)));}
 function actionHash(actions){return hash(stableActions(actions));}
 function editableSig(a){return hash([a?.reasonCode||'',a?.plan||'',a?.dueDate||'',a?.status||'TODO']);}
 function setStatus(text,state='idle',meta){const el=$('ctSyncStatus');if(!el)return;el.className=`ct-sync-status ${state}`;el.textContent=text;if(meta!==undefined){lastMeta=meta;const m=$('ctSyncMeta');if(m)m.textContent=meta||'';}}
@@ -148,7 +148,15 @@ Storage.prototype.setItem=function(k,v){
  const before=getLocalActions();originalSetItem.call(this,k,v);
  try{
    const after=JSON.parse(v);if(!Array.isArray(after))return;
-   const beforeMap=new Map(before.map(a=>[a.key,a]));const changed=after.filter(a=>a?.key&&editableSig(a)!==editableSig(beforeMap.get(a.key)));
+   const beforeMap=new Map(before.map(a=>[a.key,a]));
+   const fields=['reasonCode','plan','dueDate','status'];
+   const changed=after.filter(a=>a?.key).map(a=>{
+     const old=beforeMap.get(a.key),changedFields=fields.filter(f=>{
+       const v=a[f]??(f==='status'?'TODO':''),p=old?.[f]??(f==='status'?'TODO':'');
+       return String(v)!==String(p);
+     });
+     return changedFields.length?{...a,changedFields}:null;
+   }).filter(Boolean);
    if(changed.length){lastEditAt=Date.now();setTimeout(()=>pushChanged(changed),80);}
  }catch(e){}
 };
@@ -157,7 +165,7 @@ function start(){
  installUI();observeBoard();
  // Google Sheets Config is the source of truth; never overwrite it from the browser.
  pullRemote(false).then(()=>scheduleRiskSnapshot(1400,false));
- if(pollTimer)clearInterval(pollTimer);const poll=Math.max(180000,Number(CFG.pollMs)||180000);pollTimer=setInterval(()=>pullRemote(false),poll);
+ if(pollTimer)clearInterval(pollTimer);const poll=Math.max(30000,Number(CFG.pollMs)||30000);pollTimer=setInterval(()=>pullRemote(false),poll);
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastPullAt>poll)pullRemote(false);});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(start,100),{once:true});else setTimeout(start,100);

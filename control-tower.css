@@ -36,3 +36,15 @@
 .ct-hero .ct-kpi[data-kpi="supply"]:after{content:'▦'}
 @media(max-width:1390px){.ct-hero .ct-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.ct-hero .ct-kpis>.ct-kpi,.ct-hero .ct-kpis>.ct-kpi:nth-child(-n+4){grid-column:auto}}
 @media(max-width:740px){.ct-hero .ct-kpis{grid-template-columns:1fr}}
+
+/* Master values editable; partner values independently visible underneath. */
+#ctAction .ct-dual-cell{min-width:190px;vertical-align:top}
+#ctAction .ct-master-entry,#ctAction .ct-partner-entry{display:grid;gap:4px;padding:7px 8px;border-radius:7px;font-size:10.5px;line-height:1.35}
+#ctAction .ct-master-entry{background:#f1f6ff;border:1px solid #d8e6ff}
+#ctAction .ct-master-entry>b{color:#185dbc;font-size:9px}
+#ctAction .ct-master-entry input,#ctAction .ct-master-entry select{width:100%;min-width:0;max-width:290px;padding:6px}
+#ctAction .ct-partner-entry{margin-top:5px;background:#f7f9fc;border-left:3px solid #cbd5e1;overflow-wrap:anywhere}
+#ctAction .ct-partner-entry.filled{background:#e9f8f2;border-left-color:#26a879}
+#ctAction .ct-partner-entry b{color:#16765b;font-size:9px}
+#ctAction .ct-partner-entry span{white-space:pre-wrap;word-break:break-word}
+#ctAction table{min-width:1150px}

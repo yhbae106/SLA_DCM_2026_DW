@@ -71,7 +71,42 @@ function ensureActionControls(){const panel=$('ctAction'),tbody=$('ctActionBody'
 function clearActionRows(){const tbody=$('ctActionBody');if(tbody)tbody.innerHTML='';}
 function openActionBoard(){actionOpen=true;actionLimit=PAGE_SIZE;const panel=$('ctAction');panel?.classList.remove('ct-action-collapsed');panel?.classList.add('ct-action-open');const btn=$('ctActionToggle');if(btn)btn.textContent='Action Board 닫기';renderAllXActionBoard();}
 function closeActionBoard(){actionOpen=false;actionLimit=PAGE_SIZE;const panel=$('ctAction');panel?.classList.add('ct-action-collapsed');panel?.classList.remove('ct-action-open');const btn=$('ctActionToggle');if(btn)btn.textContent='Action Board 열기';clearActionRows();}
-function renderAllXActionBoard(){const api=window.DCMActionSync,tbody=$('ctActionBody');if(!actionOpen||!api?.allRisk||!tbody)return;const rows=api.allRisk(),visible=rows.slice(0,actionLimit);const table=tbody.closest('table'),head=table?.querySelector('thead tr');if(head&&!head.dataset.allX){head.dataset.allX='1';head.innerHTML='<th>Priority</th><th>Score</th><th>실사업자명</th><th>업체/권역</th><th>담당자</th><th>Aging</th><th>원인</th><th>조치계획</th><th>Due</th><th>상태</th>';}const panel=tbody.closest('.ct-panel'),desc=panel?.querySelector('.section-head p');if(desc)desc.textContent=`현재 필터 범위에서 X가 하나라도 있는 전체 거래처 ${rows.length}건 · Risk Score 높은 순`;const reasons=window.DCM_ACTION_REASONS||{};tbody.innerHTML=visible.map(r=>`<tr><td><span class="ct-priority ct-${String(r.priority||'P3').toLowerCase()}">${esc(r.priority||'P3')}</span></td><td><strong>${Number(r.score)||0}</strong></td><td>${esc(r.businessName||'')}</td><td>${esc(r.outlet||'')}</td><td>${esc(r.manager||'')}</td><td>${esc(r.aging||'')}</td><td><select data-allx-field="reasonCode" data-key="${esc(r.key)}"><option value="">원인 선택</option>${Object.entries(reasons).map(([k,v])=>`<option value="${esc(k)}" ${r.reasonCode===k?'selected':''}>${esc(k)} ${esc(v)}</option>`).join('')}</select></td><td><input type="text" data-allx-field="plan" data-key="${esc(r.key)}" value="${esc(r.plan||'')}" placeholder="조치계획"></td><td><input type="date" data-allx-field="dueDate" data-key="${esc(r.key)}" value="${esc(r.dueDate||'')}"></td><td><select data-allx-field="status" data-key="${esc(r.key)}">${['TODO','IN_PROGRESS','WAITING','DONE'].map(s=>`<option value="${s}" ${(r.status||'TODO')===s?'selected':''}>${statusLabel(s)}</option>`).join('')}</select></td></tr>`).join('')||'<tr><td colspan="10" class="empty">현재 필터 범위에 X 거래처가 없습니다.</td></tr>';tbody.querySelectorAll('[data-allx-field]').forEach(el=>el.addEventListener('change',()=>saveBoardField(el.dataset.key,el.dataset.allxField,el.value)));renderReasonPareto(rows);const shown=$('ctActionShown'),more=$('ctActionMore'),all=$('ctActionAll');if(shown)shown.textContent=`${Math.min(visible.length,rows.length)} / ${rows.length}건 표시`;if(more)more.hidden=visible.length>=rows.length;if(all)all.hidden=visible.length>=rows.length;}
+function readonlyPartnerMarkup(r,field){
+  const p=r.partnerAction||{},edited=Array.isArray(p.editedFields)&&p.editedFields.includes(field);
+  const explanations=window.DCM_ACTION_REASONS||{};
+  let value=edited?(p[field]||''):'';
+  if(field==='reasonCode'&&value)value=value+' '+(explanations[value]||'');
+  if(field==='status'&&value)value=statusLabel(value);
+  const display=edited?(value||'(빈 값으로 입력)'):'입력 없음';
+  const timestamp=edited?(p.updatedAt||''):'';
+  const style=edited?'ct-partner-entry filled':'ct-partner-entry';
+  return `<div class="${style}"><b>업체</b><span title="${esc(timestamp)}">${esc(display)}</span></div>`;
+}
+function masterInputMarkup(r,field){
+  const reasons=window.DCM_ACTION_REASONS||{},k=esc(r.key);
+  if(field==='reasonCode')return `<select data-allx-field="reasonCode" data-key="${k}"><option value="">원인 선택</option>${Object.entries(reasons).map(([code,label])=>`<option value="${esc(code)}" ${r.reasonCode===code?'selected':''}>${esc(code)} ${esc(label)}</option>`).join('')}</select>`;
+  if(field==='status')return `<select data-allx-field="status" data-key="${k}">${['TODO','IN_PROGRESS','WAITING','DONE'].map(x=>`<option value="${x}" ${(r.status||'TODO')===x?'selected':''}>${statusLabel(x)}</option>`).join('')}</select>`;
+  if(field==='dueDate')return `<input type="date" data-allx-field="dueDate" data-key="${k}" value="${esc(r.dueDate||'')}">`;
+  return `<input type="text" data-allx-field="plan" data-key="${k}" value="${esc(r.plan||'')}" placeholder="마스터 조치계획">`;
+}
+function renderAllXActionBoard(){
+  const api=window.DCMActionSync,tbody=$('ctActionBody');
+  if(!actionOpen||!api?.allRisk||!tbody)return;
+  const rows=api.allRisk(),visible=rows.slice(0,actionLimit),table=tbody.closest('table'),head=table?.querySelector('thead tr');
+  if(head&&!head.dataset.dualOwner){
+    head.dataset.dualOwner='1';head.innerHTML='<th>Priority</th><th>Score</th><th>실사업자명</th><th>업체/권역</th><th>담당자</th><th>Aging</th><th>원인</th><th>조치계획</th><th>Due</th><th>상태</th>';
+  }
+  const panel=tbody.closest('.ct-panel'),desc=panel?.querySelector('.section-head p');
+  if(desc)desc.textContent=`현재 필터의 X 거래처 ${rows.length}건 · 위=마스터 작성/수정, 아래=업체 작성(읽기 전용) · Risk Score 높은 순`;
+  const dual=(r,field)=>`<td class="ct-dual-cell"><div class="ct-master-entry"><b>마스터</b>${masterInputMarkup(r,field)}</div>${readonlyPartnerMarkup(r,field)}</td>`;
+  tbody.innerHTML=visible.map(r=>`<tr><td><span class="ct-priority ct-${String(r.priority||'P3').toLowerCase()}">${esc(r.priority||'P3')}</span></td><td><strong>${Number(r.score)||0}</strong></td><td>${esc(r.businessName||'')}</td><td>${esc(r.outlet||'')}</td><td>${esc(r.manager||'')}</td><td>${esc(r.aging||'')}</td>${['reasonCode','plan','dueDate','status'].map(f=>dual(r,f)).join('')}</tr>`).join('')||'<tr><td colspan="10" class="empty">현재 필터에 X 거래처가 없습니다.</td></tr>';
+  tbody.querySelectorAll('[data-allx-field]').forEach(el=>el.addEventListener('change',()=>saveBoardField(el.dataset.key,el.dataset.allxField,el.value)));
+  renderReasonPareto(rows);
+  const shown=$('ctActionShown'),more=$('ctActionMore'),all=$('ctActionAll');
+  if(shown)shown.textContent=`${Math.min(visible.length,rows.length)} / ${rows.length}건 표시`;
+  if(more)more.hidden=visible.length>=rows.length;
+  if(all)all.hidden=visible.length>=rows.length;
+}
 function scheduleActionRender(delay=100){clearTimeout(actionTimer);actionTimer=setTimeout(()=>{if(actionOpen)renderAllXActionBoard();},delay);}
 function installAllXBoard(){const tbody=$('ctActionBody');if(!tbody)return;ensureActionControls();['manager','outlet','month'].forEach(id=>$(id)?.addEventListener('change',()=>{actionLimit=PAGE_SIZE;scheduleActionRender(140);}));window.addEventListener('dcm-action-sync-applied',()=>scheduleActionRender(80));}
 window.addEventListener('load',()=>{installLayout();installChangeFilterFix();installAllXBoard();renderReasonPareto();setTimeout(syncHeroSupportKpis,120);const old=document.getElementById('resetBtn');if(!old)return;const b=old.cloneNode(true);old.replaceWith(b);b.onclick=()=>{if(!confirm('브라우저에 추가한 월별 데이터와 Action 이력을 지우고 최초 6월/7월 데이터로 복원할까요?'))return;localStorage.setItem(DATA_KEY,JSON.stringify(window.DCM_BASE_DATA||[]));localStorage.setItem(ACTION_KEY,'[]');location.reload();};});
