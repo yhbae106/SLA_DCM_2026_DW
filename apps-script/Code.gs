@@ -335,7 +335,9 @@ function loadActions_(includeHistory) {
   }
   const last = sh.getLastRow();
   if (last < 2) return {actions:[], updatedBy:'', updatedAt:''};
-  const values = sh.getRange(2,1,last-1,20).getDisplayValues();
+  // Existing legacy Action Board may still have fewer than 20 columns before setup runs.
+  const width=Math.min(20,sh.getMaxColumns());
+  const values=sh.getRange(2,1,last-1,width).getDisplayValues().map(r=>r.concat(Array(20-r.length).fill('')));
   const actions = [], reasonDict = loadReasons_();
   let latestAt = '', latestBy = '';
   values.forEach(r => {
