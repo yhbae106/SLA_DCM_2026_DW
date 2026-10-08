@@ -64,9 +64,11 @@ if(ctx.DCM_CONFIG.managerByOutlet['백제약품 대전']!=='정직한')fail('Dae
 ok('all '+daejeon.length+' historical Daejeon records and mapping owned by Jeong');
 const gas=read('apps-script/Code.gs');
 new Function(gas);
-if(/partnerSaveAction|savePartnerAction_/.test(gas))fail('Unexpected Partner write-back endpoint');
+if(!gas.includes('partnerSaveAction')||!gas.includes('savePartnerAction_'))fail('Authenticated Partner write-back endpoint missing');
+if(!gas.includes('repairActionReasonValidation'))fail('Repair utility for legacy H validation missing');
 if(!gas.includes("body.type === 'partnerActions'")||!gas.includes("assertPartnerPassword_(partner, body.password)"))fail('Authenticated Partner Action read endpoint missing');
 if(!gas.includes("type === 'dashboard') throw"))fail('Public Dashboard GET unexpectedly enabled');
 if(!gas.includes('fixDaejeonManagersInSheets'))fail('Owner-run historical repair utility missing');
-ok('Apps Script Action read-only auth and historical repair');
+ok('Apps Script dual-source auth, H validation repair and historical manager repair');
+await import('./gas-regression.mjs');
 console.log('HARNESS_OK');
