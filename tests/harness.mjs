@@ -76,6 +76,12 @@ const liveSync=read('action-sync.js');
 if(!liveSync.includes("post({type:'load'})"))fail('Action read must use authenticated POST load');
 if(liveSync.includes("url.searchParams.set('token'"))fail('Secret must not be sent in GET URL');
 if(!liveSync.includes('syncBroken=true'))fail('HTTP404 retry circuit breaker missing');
+if(!liveSync.includes("REQUIRED_API_VERSION='20261008-reason-validation-heal-v2'"))fail('Exact GAS deployment version gate missing');
+if(!liveSync.includes("post({type:'repairReasonValidation'})"))fail('One-click H31/H110 repair call missing');
+if(!liveSync.includes("PENDING_KEY='dcm-action-master-pending-v1'"))fail('Unsent master edits are not persisted');
+if(!liveSync.includes('if(!saved)return false'))fail('Failed pending writes may be overwritten by remote sync');
+if(!liveSync.includes('ctReasonRepair'))fail('Master sheet repair button missing');
+
 const liveAPI=read('apps-script/Code.gs');
 if(!liveAPI.includes("body.type === 'partnerLogin'")||!liveAPI.includes("body.type === 'partnerSaveActions'"))fail('Fast login or batch saving endpoint missing');
 if(!liveAPI.includes("type === 'health'"))fail('Public endpoint health probe missing');
