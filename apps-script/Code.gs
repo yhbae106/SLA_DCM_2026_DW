@@ -5,6 +5,8 @@ const DCM_HISTORY_SHEET = 'History';
 const DCM_DATA_SHEET = 'Dashboard Data';
 const DCM_DATA_META_SHEET = 'Dashboard Meta';
 const DCM_PARTNERS = ['백제약품','인천약품','복산나이스','아이팜코리아','유진약품'];
+const DCM_PARTNER_ACTION_HEADERS = ['업체 원인','업체 조치계획','업체 Due','업체 상태','업체 수정자','업체 수정시간','업체 수정필드'];
+const DCM_PARTNER_ACTION_FIELDS = ['reasonCode','plan','dueDate','status'];
 
 function doGet(e) {
   try {
@@ -33,10 +35,11 @@ function doPost(e) {
       assertPartnerPassword_(partner, body.password);
       return json_({ok:true, partner:partner, ...loadPartnerDashboardData_(partner)});
     }
-    if (body.type === 'partnerActions') {
+    if (body.type === 'partnerActions' || body.type === 'partnerSaveAction') {
       const partner = normalizePartner_(body.partner);
       assertPartnerPassword_(partner, body.password);
-      return json_({ok:true, ...loadPartnerActions_(partner)});
+      if (body.type === 'partnerActions') return json_({ok:true, ...loadPartnerActions_(partner)});
+      return json_({ok:true, ...withActionLock_(function(){return savePartnerAction_(partner,body);})});
     }
     if (body.type === 'saveDashboard') {
       assertMasterPassword_(body.password);
@@ -103,6 +106,7 @@ function setupDcmActionSync() {
     '05':'공급·거래 중단 예정','06':'신규 거래처 연동 예정','07':'당월 매출 미발생'
   });
   else refreshReasonValidation_();
+  ensurePartnerActionColumns_(ss.getSheetByName(DCM_SHEET));
 }
 
 function assertToken_(token) {
@@ -162,9 +166,86 @@ function loadPartnerActions_(partner) {
   const visible=shared.actions.filter(a => partnerOfOutlet_(a.outlet || String(a.key || '').split('|||')[0]) === partner)
     .map(a => ({key:a.key,businessNo:a.businessNo,priority:a.priority,businessName:a.businessName,
       outlet:a.outlet,manager:canonicalManager_(a.outlet,a.manager),aging:a.aging,reasonCode:a.reasonCode,
-      plan:a.plan,dueDate:a.dueDate,status:a.status,modifiedBy:a.modifiedBy,updatedAt:a.updatedAt}));
+      plan:a.plan,dueDate:a.dueDate,status:a.status,modifiedBy:a.modifiedBy,updatedAt:a.updatedAt,
+      partnerAction:a.partnerAction||null}));
   return {actions:visible,reasons:loadReasons_(),updatedAt:shared.updatedAt,updatedBy:shared.updatedBy};
 }
+
+/* A:M: master only. N:T: independent Partner entries. */
+function ensurePartnerActionColumns_(sh) {
+  if (!sh) throw new Error('Action Board 시트를 찾을 수 없습니다.');
+  const start=14, headers=DCM_PARTNER_ACTION_HEADERS;
+  if (sh.getMaxColumns() < 20) sh.insertColumnsAfter(sh.getMaxColumns(),20-sh.getMaxColumns());
+  const range=sh.getRange(1,start,1,headers.length);
+  const current=range.getDisplayValues()[0];
+  if (current.some((v,i)=>String(v||'').trim() && String(v).trim()!==headers[i])) {
+    throw new Error('Action Board N:T 열에 다른 데이터 헤더가 있습니다. 기존 내용을 확인해 주세요.');
+  }
+  if (current.some((v,i)=>v!==headers[i])) range.setValues([headers]);
+}
+function partnerEditedFields_(cell) {
+  try {
+    const fields=JSON.parse(String(cell||'[]'));
+    return Array.isArray(fields)?DCM_PARTNER_ACTION_FIELDS.filter(f=>fields.includes(f)):[];
+  }catch(err){return [];}
+}
+function partnerActionFromCells_(row, reasonDict) {
+  const fields=partnerEditedFields_(row[19]);
+  if (!fields.length) return null;
+  return {
+    reasonCode:fields.includes('reasonCode')?reasonCode_(row[13],reasonDict):'',
+    plan:fields.includes('plan')?String(row[14]||''):'',
+    dueDate:fields.includes('dueDate')?normalizeDate_(row[15]):'',
+    status:fields.includes('status')?statusCode_(row[16]):'',
+    modifiedBy:row[17]||'',updatedAt:row[18]||'',editedFields:fields
+  };
+}
+function safeSheetText_(raw) {
+  const value=String(raw == null?'':raw);
+  return /^[=+\-@]/.test(value)?("'"+value):value;
+}
+function savePartnerAction_(partner, body) {
+  const key=String(body.key||''),parts=key.split('|||'),field=String(body.field||'');
+  if(parts.length!==2 || !parts[0] || !parts[1] || key.length>240 ||
+      partnerOfOutlet_(parts[0])!==partner) throw new Error('업체에 속하지 않는 거래처입니다.');
+  if(!DCM_PARTNER_ACTION_FIELDS.includes(field)) throw new Error('수정할 수 없는 필드입니다.');
+  const value=String(body.value == null?'':body.value);
+  if(value.length>3000) throw new Error('입력 내용은 최대 3000자입니다.');
+  if(field==='reasonCode' && value) {
+    if (!Object.prototype.hasOwnProperty.call(loadReasons_(),value)) throw new Error('허용되지 않은 원인코드입니다.');
+  }
+  if(field==='dueDate' && value && !/^\d{4}-\d{2}-\d{2}$/.test(value))throw new Error('기한은 YYYY-MM-DD 형식이어야 합니다.');
+  if(field==='status' && !['TODO','IN_PROGRESS','WAITING','DONE'].includes(value))throw new Error('허용되지 않은 진행상태입니다.');
+  const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID),sh=ss.getSheetByName(DCM_SHEET);
+  ensurePartnerActionColumns_(sh);
+  const total=sh.getLastRow();
+  const keys=total>=2?sh.getRange(2,1,total-1,1).getDisplayValues():[];
+  const offset=keys.findIndex(r=>r[0]===key);
+  let rowNumber=offset<0?0:offset+2;
+  if(!rowNumber) {
+    const dash=ss.getSheetByName(DCM_DATA_SHEET),cnt=dash?.getLastRow()||0;
+    const records=cnt>=2?dash.getRange(2,1,cnt-1,9).getDisplayValues():[];
+    const matches=records.filter(r=>r[1]===parts[0]&&r[3]===parts[1]);
+    if(!matches.length)throw new Error('마스터 데이터에 없는 거래처입니다.');
+    const last=matches[matches.length-1];
+    if(![last[5],last[6],last[7]].some(v=>String(v).trim().toUpperCase()==='X'))
+      throw new Error('현재 연동 필요 대상이 아닙니다.');
+    const fixed=[key,last[3],'',last[4],last[1],canonicalManager_(last[1],last[2]),'', '', '', '', '', '', ''];
+    rowNumber=sh.getLastRow()+1;sh.getRange(rowNumber,1,1,13).setValues([fixed]);
+  }
+  const row=sh.getRange(rowNumber,14,1,7).getDisplayValues()[0];
+  const idx=DCM_PARTNER_ACTION_FIELDS.indexOf(field);
+  const dictionary=field==='reasonCode'?loadReasons_():null;
+  row[idx]=field==='reasonCode'?(value?value+' '+dictionary[value]:'') :
+           field==='plan'?safeSheetText_(value):value;
+  const now=Utilities.formatDate(new Date(),'Asia/Seoul',"yyyy-MM-dd'T'HH:mm:ssXXX");
+  row[4]='업체:'+partner;row[5]=now;
+  const edited=new Set(partnerEditedFields_(row[6]));edited.add(field);row[6]=JSON.stringify([...edited]);
+  sh.getRange(rowNumber,14,1,7).setValues([row]);
+  SpreadsheetApp.flush();
+  return {key:key,field:field,value:value,updatedAt:now,modifiedBy:row[4]};
+}
+
 function ensureDashboardSheets_() {
   const ss = SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
   let sh = ss.getSheetByName(DCM_DATA_SHEET);
@@ -253,16 +334,17 @@ function loadActions_(includeHistory) {
   }
   const last = sh.getLastRow();
   if (last < 2) return {actions:[], updatedBy:'', updatedAt:''};
-  const values = sh.getRange(2,1,last-1,13).getDisplayValues();
+  const values = sh.getRange(2,1,last-1,20).getDisplayValues();
   const actions = [], reasonDict = loadReasons_();
   let latestAt = '', latestBy = '';
   values.forEach(r => {
     const key = r[0]; if (!key) return;
     const updatedAt = r[12] || '';
     if (updatedAt && (!latestAt || updatedAt > latestAt)) { latestAt = updatedAt; latestBy = r[11] || ''; }
+    if (r[18] && (!latestAt || r[18] > latestAt)) { latestAt=r[18];latestBy=r[17]||''; }
     actions.push({
       key:key, businessNo:r[1] || '', priority:r[2] || '', businessName:r[3] || '', outlet:r[4] || '', manager:canonicalManager_(r[4],r[5]), aging:r[6] || '',
-      reasonCode:reasonCode_(r[7], reasonDict), plan:r[8] || '', dueDate:normalizeDate_(r[9]), status:statusCode_(r[10]), modifiedBy:r[11] || '', updatedAt:r[12] || '', history:historyMap[key] || []
+      reasonCode:reasonCode_(r[7], reasonDict), plan:r[8] || '', dueDate:normalizeDate_(r[9]), status:statusCode_(r[10]), modifiedBy:r[11] || '', updatedAt:r[12] || '', partnerAction:partnerActionFromCells_(r,reasonDict), history:historyMap[key] || []
     });
   });
   return {actions:actions, updatedBy:latestBy, updatedAt:latestAt};
