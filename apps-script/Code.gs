@@ -33,11 +33,10 @@ function doPost(e) {
       assertPartnerPassword_(partner, body.password);
       return json_({ok:true, partner:partner, ...loadPartnerDashboardData_(partner)});
     }
-    if (body.type === 'partnerActions' || body.type === 'partnerSaveAction') {
+    if (body.type === 'partnerActions') {
       const partner = normalizePartner_(body.partner);
       assertPartnerPassword_(partner, body.password);
-      if (body.type === 'partnerActions') return json_({ok:true, ...loadPartnerActions_(partner)});
-      return json_({ok:true, ...savePartnerAction_(partner, body.action)});
+      return json_({ok:true, ...loadPartnerActions_(partner)});
     }
     if (body.type === 'saveDashboard') {
       assertMasterPassword_(body.password);
@@ -159,38 +158,13 @@ function withActionLock_(callback) {
   try {return callback();} finally {lock.releaseLock();}
 }
 function loadPartnerActions_(partner) {
-  const shared=loadActions_();
+  const shared=loadActions_(false);
   const visible=shared.actions.filter(a => partnerOfOutlet_(a.outlet || String(a.key || '').split('|||')[0]) === partner)
     .map(a => ({key:a.key,businessNo:a.businessNo,priority:a.priority,businessName:a.businessName,
       outlet:a.outlet,manager:canonicalManager_(a.outlet,a.manager),aging:a.aging,reasonCode:a.reasonCode,
       plan:a.plan,dueDate:a.dueDate,status:a.status,modifiedBy:a.modifiedBy,updatedAt:a.updatedAt}));
   return {actions:visible,reasons:loadReasons_(),updatedAt:shared.updatedAt,updatedBy:shared.updatedBy};
 }
-function savePartnerAction_(partner, incoming) {
-  if (!incoming || typeof incoming !== 'object') throw new Error('Action 데이터가 없습니다.');
-  const key=String(incoming.key || '').trim(),parts=key.split('|||');
-  if(parts.length!==2 || !parts[0] || !parts[1] || partnerOfOutlet_(parts[0])!==partner)
-    throw new Error('해당 파트너사의 거래처만 수정할 수 있습니다.');
-  const reasonCode=String(incoming.reasonCode || ''),allowedReasons=loadReasons_();
-  if(reasonCode && !Object.prototype.hasOwnProperty.call(allowedReasons,reasonCode)) throw new Error('허용되지 않은 원인코드입니다.');
-  const status=String(incoming.status || 'TODO');
-  if(['TODO','IN_PROGRESS','WAITING','DONE'].indexOf(status)<0)throw new Error('허용되지 않은 진행상태입니다.');
-  const plan=String(incoming.plan || '').trim();
-  if(plan.length>3000)throw new Error('조치계획은 3000자 이하로 입력해 주세요.');
-  const due=String(incoming.dueDate || '');
-  if(due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) throw new Error('Due Date 형식이 올바르지 않습니다.');
-  return withActionLock_(function(){
-    const shared=loadActions_(),found=shared.actions.find(a=>a.key===key);
-    const rows=loadDashboardData_().data.filter(r=>r.outlet===parts[0]&&r.businessNo===parts[1]);
-    if(!rows.length)throw new Error('마스터 데이터에 없는 거래처입니다.');
-    const r=rows[rows.length-1],fixed=found||{};
-    const clean={key:key,businessNo:r.businessNo,outlet:r.outlet,businessName:r.businessName,
-      manager:canonicalManager_(r.outlet,r.manager),priority:fixed.priority||'',aging:fixed.aging||'',
-      reasonCode:reasonCode,plan:plan,dueDate:due,status:status};
-    return saveActions_([clean],'PARTNER:'+partner,'edit');
-  });
-}
-
 function ensureDashboardSheets_() {
   const ss = SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
   let sh = ss.getSheetByName(DCM_DATA_SHEET);
@@ -264,12 +238,12 @@ function normalizeOx_(v) {
   return s === 'O' || s === 'X' ? s : '';
 }
 
-function loadActions_() {
+function loadActions_(includeHistory) {
   const ss = SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
   const sh = ss.getSheetByName(DCM_SHEET);
   const hist = ss.getSheetByName(DCM_HISTORY_SHEET);
   const historyMap = {};
-  if (hist && hist.getLastRow() >= 2) {
+  if (includeHistory !== false && hist && hist.getLastRow() >= 2) {
     hist.getRange(2,1,hist.getLastRow()-1,11).getDisplayValues().forEach(r => {
       const key = r[1]; if (!key) return;
       if (!historyMap[key]) historyMap[key] = [];
@@ -280,7 +254,7 @@ function loadActions_() {
   const last = sh.getLastRow();
   if (last < 2) return {actions:[], updatedBy:'', updatedAt:''};
   const values = sh.getRange(2,1,last-1,13).getDisplayValues();
-  const actions = [];
+  const actions = [], reasonDict = loadReasons_();
   let latestAt = '', latestBy = '';
   values.forEach(r => {
     const key = r[0]; if (!key) return;
@@ -288,7 +262,7 @@ function loadActions_() {
     if (updatedAt && (!latestAt || updatedAt > latestAt)) { latestAt = updatedAt; latestBy = r[11] || ''; }
     actions.push({
       key:key, businessNo:r[1] || '', priority:r[2] || '', businessName:r[3] || '', outlet:r[4] || '', manager:r[5] || '', aging:r[6] || '',
-      reasonCode:reasonCode_(r[7]), plan:r[8] || '', dueDate:normalizeDate_(r[9]), status:statusCode_(r[10]), modifiedBy:r[11] || '', updatedAt:r[12] || '', history:historyMap[key] || []
+      reasonCode:reasonCode_(r[7], reasonDict), plan:r[8] || '', dueDate:normalizeDate_(r[9]), status:statusCode_(r[10]), modifiedBy:r[11] || '', updatedAt:r[12] || '', history:historyMap[key] || []
     });
   });
   return {actions:actions, updatedBy:latestBy, updatedAt:latestAt};
@@ -405,8 +379,8 @@ function refreshReasonValidation_() {
   if(labels.length)range.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(labels,true).setAllowInvalid(false).build());
   else range.clearDataValidations();
 }
-function reasonCode_(text) {
-  const str=String(text||'').trim(),reasons=loadReasons_();
+function reasonCode_(text, cachedReasons) {
+  const str=String(text||'').trim(),reasons=cachedReasons||loadReasons_();
   return Object.keys(reasons).sort((a,b)=>b.length-a.length).find(k=>str===k||str.startsWith(k+' '))||'';
 }
 function reasonText_(code) {
@@ -419,3 +393,23 @@ function statusLabel_(s) { return ({TODO:'미조치',IN_PROGRESS:'진행중',WAI
 function statusCode_(s) { return ({'미조치':'TODO','진행중':'IN_PROGRESS','업체회신':'WAITING','완료':'DONE'})[s] || (s || 'TODO'); }
 function normalizeDate_(s) { const m=String(s||'').match(/\d{4}-\d{2}-\d{2}/); return m?m[0]:String(s||''); }
 function json_(obj) { return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
+
+/**
+ * Owner-operated one-time repair, callable in the Apps Script editor after deployment.
+ * Fixes historical Dashboard Data and Action Board manager labels without touching other fields.
+ */
+function fixDaejeonManagersInSheets() {
+  const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
+  let changed=0;
+  [[DCM_DATA_SHEET,2,3],[DCM_SHEET,5,6]].forEach(function(spec){
+    const sh=ss.getSheetByName(spec[0]);if(!sh||sh.getLastRow()<2)return;
+    const count=sh.getLastRow()-1,outs=sh.getRange(2,spec[1],count,1).getDisplayValues(),
+      managers=sh.getRange(2,spec[2],count,1).getDisplayValues();
+    for(let i=0;i<count;i++){
+      if(String(outs[i][0]||'').trim()==='백제약품 대전'&&String(managers[i][0]||'').trim()!=='정직한'){
+        sh.getRange(i+2,spec[2]).setValue('정직한');changed++;
+      }
+    }
+  });
+  SpreadsheetApp.flush();return '수정한 담당자 셀: '+changed;
+}
