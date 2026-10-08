@@ -26,7 +26,7 @@ function migrateLegacyLocalReasons(){
  if(changed){suppressSync=true;originalSetItem.call(localStorage,ACTION_KEY,JSON.stringify(actions));suppressSync=false;}
  localStorage.setItem(REASON_SCHEMA_KEY,'1');
 }
-function getData(){try{const x=JSON.parse(localStorage.getItem(DATA_KEY));if(Array.isArray(x)&&x.length)return x;}catch(e){}try{return JSON.parse(JSON.stringify(window.DCM_BASE_DATA||[]));}catch(e){return []}}
+function getData(){let rows=[];try{const x=JSON.parse(localStorage.getItem(DATA_KEY));if(Array.isArray(x)&&x.length)rows=x;}catch(e){}if(!rows.length){try{rows=JSON.parse(JSON.stringify(window.DCM_BASE_DATA||[]));}catch(e){rows=[];}}rows.forEach(r=>{if(r.outlet==='백제약품 대전')r.manager='정직한';});return rows;}
 function rowKey(r){return `${r.outlet}|||${r.businessNo}`;}
 function months(data){return [...new Set(data.map(r=>r.month).filter(Boolean))].sort();}
 function currentMonth(data){return $('month')?.value||months(data).slice(-1)[0]||null;}
