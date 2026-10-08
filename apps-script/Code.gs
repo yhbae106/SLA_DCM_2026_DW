@@ -197,7 +197,7 @@ function partnerActionFromCells_(row, reasonDict) {
     reasonCode:fields.includes('reasonCode')?reasonCode_(row[13],reasonDict):'',
     plan:fields.includes('plan')?String(row[14]||''):'',
     dueDate:fields.includes('dueDate')?normalizeDate_(row[15]):'',
-    status:fields.includes('status')?statusCode_(row[16]):'',
+    status:fields.includes('status')?(row[16]?statusCode_(row[16]):''):'',
     modifiedBy:row[17]||'',updatedAt:row[18]||'',editedFields:fields
   };
 }
@@ -216,7 +216,7 @@ function savePartnerAction_(partner, body) {
     if (!Object.prototype.hasOwnProperty.call(loadReasons_(),value)) throw new Error('허용되지 않은 원인코드입니다.');
   }
   if(field==='dueDate' && value && !/^\d{4}-\d{2}-\d{2}$/.test(value))throw new Error('기한은 YYYY-MM-DD 형식이어야 합니다.');
-  if(field==='status' && !['TODO','IN_PROGRESS','WAITING','DONE'].includes(value))throw new Error('허용되지 않은 진행상태입니다.');
+  if(field==='status' && value && !['TODO','IN_PROGRESS','WAITING','DONE'].includes(value))throw new Error('허용되지 않은 진행상태입니다.');
   const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID),sh=ss.getSheetByName(DCM_SHEET);
   ensurePartnerActionColumns_(sh);
   const total=sh.getLastRow();
