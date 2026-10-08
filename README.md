@@ -56,3 +56,10 @@
 - **H31/H110 예방:** 마스터 저장은 변경 필드만 쓰며, H열은 원인 변경 시에만 갱신합니다. Config 01~08을 지원하고 과거 값이 새 검증 목록에 없더라도 저장이 중단되지 않도록 경고형 데이터 검증을 설정합니다. `repairActionReasonValidation()` 실행으로 H열 규칙을 직접 복구할 수 있습니다.
 - **필수:** `apps-script/Code.gs`를 사용 중인 Google Apps Script 편집기에 적용한 후 **기존 웹앱을 새 버전으로 배포**해야 서버 읽기/저장 API와 H 규칙 조정이 적용됩니다. GitHub Pages 배포만으로는 GAS 서버가 자동 변경되지 않습니다.
 - 자동 회귀 테스트: `node tests/harness.mjs` — H31/H110, 08코드, 마스터/업체 분리·권한 보호 검증.
+
+## 2026-10-08 공용 Sync HTTP 404 / 로그인 성능 개선
+- 앱스크립트 `doPost(type=load)`로 Action 데이터를 호출합니다. 공유키를 URL 쿼리에 넣는 GET 로딩은 중단했습니다.
+- GAS 웹앱은 `GET ?type=health`로 배포 상태를 확인할 수 있습니다. HTTP 404면 기존 /exec 주소가 삭제·변경되었거나 배포가 유효하지 않은 상태일 수 있으므로 **실제 배포 주소를 확인**해야 합니다.
+- `partnerLogin`은 코드 검사만 반환합니다. `partnerDashboard`와 `partnerActions`는 독립 조회하고 데이터는 90초 파트너별 분할 CacheService로 캐시합니다.
+- `partnerSaveActions`는 최대 50개 필드를 한 번에 업체 전용 N:T에 기록합니다. A:M 마스터 데이터를 덮어쓰지 않습니다.
+- IMPORTANT: GitHub Pages 병합만으로 Apps Script 배포는 변경되지 않습니다. Apps Script 편집기에서 **새 코드로 동일 웹앱을 재배포**하고, URL이 달라졌으면 양 저장소의 endpoint를 수정해야 합니다.
