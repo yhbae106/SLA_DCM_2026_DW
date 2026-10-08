@@ -538,37 +538,57 @@ function saveActions_(actions, editor, mode) {
   return {updatedAt:latestAt,updatedBy:latestBy,changedRows:changedRows};
 }
 
-function syncReasons_(reasons) {
+
+function canonicalReasonCode_(code) {
+  const raw=String(code===null||code===undefined?'':code).trim();
+  const match=raw.match(/^(\d{1,2})(?:\.0+)?(?:\s|$)/);
+  return match?match[1].padStart(2,'0'):'';
+}
+function ensureReasonConfig_() {
   const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
   let cfg=ss.getSheetByName(DCM_CONFIG_SHEET);
   if(!cfg){cfg=ss.insertSheet(DCM_CONFIG_SHEET);cfg.hideSheet();}
-  const existing=cfg.getLastRow()>=2?cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues():[];
-  const current=new Map(existing.map(r=>[String(r[0]||'').trim(),String(r[1]||'').trim()]));
   if(cfg.getLastRow()<1)cfg.getRange(1,1,1,2).setValues([['code','label']]);
-  const incoming={...DCM_REASON_DEFAULTS,...(reasons||{})};
-  const add=Object.entries(incoming).filter(([code,label])=>/^\d{2}$/.test(code)&&String(label||'').trim()&&!current.has(code));
-  if(add.length)cfg.getRange(cfg.getLastRow()+1,1,add.length,2).setValues(add);
+  const last=cfg.getLastRow();
+  const existing=last>=2?cfg.getRange(2,1,last-1,2).getDisplayValues():[];
+  // Preserve "08" as text, not numeric 8 or 8.0.
+  cfg.getRange(2,1,Math.max(8,existing.length),1).setNumberFormat('@');
+  const found=new Set();
+  existing.forEach((row,i)=>{
+    const code=canonicalReasonCode_(row[0]);
+    if(!/^\d{2}$/.test(code))return;
+    if(String(row[0]).trim()!==code)cfg.getRange(i+2,1).setValue(code);
+    found.add(code);
+  });
+  const missing=Object.entries(DCM_REASON_DEFAULTS).filter(([code])=>!found.has(code));
+  if(missing.length)cfg.getRange(cfg.getLastRow()+1,1,missing.length,2).setValues(missing);
+  return cfg;
+}
+function syncReasons_(reasons) {
+  const cfg=ensureReasonConfig_();
+  const merged={...DCM_REASON_DEFAULTS,...(reasons||{})};
+  const existing=cfg.getLastRow()>=2?cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues():[];
+  const found=new Set(existing.map(r=>canonicalReasonCode_(r[0])).filter(Boolean));
+  const missing=Object.entries(merged).filter(([code,label])=>/^\d{2}$/.test(code)&&
+    String(label||'').trim()&&!found.has(code));
+  if(missing.length)cfg.getRange(cfg.getLastRow()+1,1,missing.length,2).setValues(missing);
   refreshReasonValidation_();
 }
 function loadReasons_() {
-  // Include the default vocabulary even if an older Config tab only holds codes 01–07.
-  const dictionary={...DCM_REASON_DEFAULTS},cfg=SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_CONFIG_SHEET);
+  const dictionary={...DCM_REASON_DEFAULTS};
+  const cfg=SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_CONFIG_SHEET);
   if(cfg&&cfg.getLastRow()>=2)cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues().forEach(r=>{
-    const code=String(r[0]||'').trim(),label=String(r[1]||'').trim();
+    const code=canonicalReasonCode_(r[0]),label=String(r[1]||'').trim();
     if(/^\d{2}$/.test(code)&&label)dictionary[code]=label;
   });
   return dictionary;
 }
+
 function refreshReasonValidation_() {
   const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID),sh=ss.getSheetByName(DCM_SHEET);
   if(!sh)throw new Error('Action Board 시트가 없습니다.');
-  const dict=loadReasons_(),cfg=ss.getSheetByName(DCM_CONFIG_SHEET);
-  // Merge missing codes without changing user-customized labels in Config.
-  if(cfg){
-    const existing=cfg.getLastRow()>=2?cfg.getRange(2,1,cfg.getLastRow()-1,1).getDisplayValues().map(r=>String(r[0]).trim()):[];
-    const missing=Object.entries(dict).filter(([c])=>!existing.includes(c));
-    if(missing.length)cfg.getRange(cfg.getLastRow()+1,1,missing.length,2).setValues(missing);
-  }
+  ensureReasonConfig_();
+  const dict=loadReasons_();
   const labels=Object.entries(dict).map(([c,t])=>c+' '+t);
   // The dropdown remains, but old labels cannot block other changes.
   const rule=SpreadsheetApp.newDataValidation()
@@ -577,7 +597,11 @@ function refreshReasonValidation_() {
     .setHelpText('원인코드 01~08 중 선택하세요. 과거 입력값은 자동 삭제되지 않습니다.')
     .build();
   const rowCount=Math.max(2,sh.getMaxRows?sh.getMaxRows():Math.max(sh.getLastRow(),1000));
-  sh.getRange(2,8,rowCount-1,1).setDataValidation(rule);
+  const entireH=sh.getRange(2,8,rowCount-1,1);
+  // Existing sheet really has 6 fragmented validation rules (H31 only 01-07).
+  // Clearing first avoids leaving single-cell override exceptions behind.
+  entireH.clearDataValidations();
+  entireH.setDataValidation(rule);
   return {updatedRows:rowCount-1,acceptedCodes:Object.keys(dict),allowedLabels:labels};
 }
 /**
@@ -592,10 +616,13 @@ function inspectActionReasonValidation_() {
   rows.forEach(function(row){
     if(sh.getMaxRows && row>sh.getMaxRows())return;
     const range=sh.getRange(row,8,1,1),rule=range.getDataValidation();
+    const criteria=rule&&typeof rule.getCriteriaValues==='function'?rule.getCriteriaValues():null;
+    const options=criteria&&Array.isArray(criteria[0])?criteria[0]:null;
     result['H'+row]={
       hasRule:!!rule,
       allowInvalid:rule&&typeof rule.getAllowInvalid==='function'?rule.getAllowInvalid():null,
-      type:rule&&typeof rule.getCriteriaType==='function'?String(rule.getCriteriaType()):null
+      type:rule&&typeof rule.getCriteriaType==='function'?String(rule.getCriteriaType()):null,
+      allows08:options?options.some(s=>String(s).startsWith('08 ')):null
     };
   });
   return result;
@@ -603,7 +630,7 @@ function inspectActionReasonValidation_() {
 function repairActionReasonValidation() {
   const result=refreshReasonValidation_();
   const audit=inspectActionReasonValidation_();
-  const blocked=Object.entries(audit).filter(([key,value])=>value.hasRule&&value.allowInvalid!==true);
+  const blocked=Object.entries(audit).filter(([key,value])=>!value.hasRule||value.allowInvalid!==true||value.allows08===false);
   if(blocked.length)throw new Error('H열 입력 규칙 복구 후 검증이 실패했습니다: '+blocked.map(x=>x[0]).join(','));
   return {repaired:true,version:DCM_SYNC_API_VERSION,changedCellContents:0,
     updatedRows:result.updatedRows,acceptedCodes:result.acceptedCodes,audit:audit};
@@ -615,7 +642,10 @@ function repairActionReasonValidation() {
 function setReasonCellSafely_(sh,row,value) {
   const range=sh.getRange(row,8,1,1);
   const existing=range.getDataValidation();
-  if(existing&&typeof existing.getAllowInvalid==='function'&&!existing.getAllowInvalid()){
+  const criteria=existing&&typeof existing.getCriteriaValues==='function'?existing.getCriteriaValues():null;
+  const choices=criteria&&Array.isArray(criteria[0])?criteria[0]:null;
+  if(!existing || (typeof existing.getAllowInvalid==='function'&&!existing.getAllowInvalid()) ||
+    (choices&&!choices.some(s=>String(s).startsWith('08 ')))){
     refreshReasonValidation_();
   }
   try {
