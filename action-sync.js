@@ -181,7 +181,7 @@ async function pushChanged(actions){
 
 function riskSignature(snapshot){return hash((snapshot||[]).map(a=>[a.key,a.priority,a.businessName,a.outlet,a.manager,a.aging]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))));}
 async function pushRiskSnapshot(force=false){
- if(!endpoint()||!token()||syncBroken)return;
+ if(!endpoint()||!token()||syncBroken||!serverReady)return;
  const snapshot=allRiskRows();if(!snapshot.length)return;
  const sig=riskSignature(snapshot);if(!force&&sessionStorage.getItem(RISK_HASH_KEY)===sig)return;
  try{
@@ -211,7 +211,8 @@ async function pullRemote(force=false,forceRepair=false){
      try{
        const repaired=await post({type:'repairReasonValidation'});
        if(!repaired.repaired||repaired.version!==REQUIRED_API_VERSION||
-         repaired.audit?.H31?.allowInvalid!==true||repaired.audit?.H110?.allowInvalid!==true)
+         repaired.audit?.H31?.allowInvalid!==true||repaired.audit?.H110?.allowInvalid!==true||
+         repaired.audit?.H31?.allows08!==true||repaired.audit?.H110?.allows08!==true)
          throw new Error('H31/H110 입력 규칙 복구 상태를 검증하지 못했습니다.');
        sessionStorage.setItem(REPAIR_SESSION_KEY,'1');
      } finally {repairing=false;}
