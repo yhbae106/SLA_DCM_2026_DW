@@ -91,4 +91,26 @@ try{call('savePartnerAction_','유진약품',{key:'백제약품 대전|||31',fie
 catch(e){blocked=true;}
 if(!blocked)fail('Unauthorized cross-partner edit not rejected');
 ok('Cross-partner edit rejected by server-side ownership check');
+
+const masterBefore=sheet.rows[30][8],hBefore=sheet.rows[30][7];
+const batch=call('savePartnerActionsBatch_','백제약품',[
+ {key:'백제약품 대전|||31',field:'plan',value:'batch partner edit'},
+ {key:'백제약품 대전|||31',field:'status',value:'DONE'}
+]);
+if(batch.saved!==2||batch.results.length!==2)fail('Partner batch response length');
+if(sheet.rows[30][14]!=='batch partner edit'||sheet.rows[30][16]!=='DONE')fail('Partner batch was not saved to N:T');
+if(sheet.rows[30][8]!==masterBefore||sheet.rows[30][7]!==hBefore)fail('Partner batch altered master H/I cells');
+ok('Partner batch writes once per key and does not modify master H/M');
+let batchBlocked=false;
+try{call('savePartnerActionsBatch_','유진약품',[{key:'백제약품 대전|||31',field:'plan',value:'attack'}]);}
+catch(_){batchBlocked=true;}
+if(!batchBlocked)fail('Batch write skipped partner ownership check');
+ok('Partner batch rejects cross-company writes');
+
+const previousProps=context.PropertiesService;
+context.PropertiesService={getScriptProperties:()=>({getProperty:k=>k.startsWith('DCM_PARTNER_PASSWORD_')?'test-secret':null})};
+const loginJson=JSON.parse(call('doPost',{postData:{contents:JSON.stringify({type:'partnerLogin',partner:'백제약품',password:'test-secret'})}}));
+if(!loginJson.ok||!loginJson.partner||loginJson.data||loginJson.actions)fail('Login unnecessarily waits for data and actions');
+ok('Partner authentication returns lightweight response without Dashboard or Action data');
+context.PropertiesService=previousProps;
 console.log('GAS_REGRESSION_OK');
