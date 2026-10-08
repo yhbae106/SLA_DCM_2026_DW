@@ -7,11 +7,11 @@ const DCM_DATA_META_SHEET = 'Dashboard Meta';
 const DCM_PARTNERS = ['백제약품','인천약품','복산나이스','아이팜코리아','유진약품'];
 const DCM_PARTNER_ACTION_HEADERS = ['업체 원인','업체 조치계획','업체 Due','업체 상태','업체 수정자','업체 수정시간','업체 수정필드'];
 const DCM_PARTNER_ACTION_FIELDS = ['reasonCode','plan','dueDate','status'];
-const DCM_SYNC_API_VERSION = '20261008-reason-validation-heal-v2';
+const DCM_SYNC_API_VERSION = '20261008-seven-reasons-fast-v3';
 const DCM_REASON_DEFAULTS = {
   '01':'ERP/시스템 미구축','02':'도입 품목 미연동','03':'전산/데이터 오류',
-  '04':'거래처 연동 거부/미협조','05':'공급·거래 중단 예정',
-  '06':'신규 거래처 연동 예정','07':'당월 매출 미발생','08':'도매몰 연동 필요'
+  '04':'거래처 연동 거부/미협조','05':'도매몰 미연동',
+  '06':'신규 거래처 연동 예정','07':'당월 매출 미발생'
 };
 
 function doGet(e) {
@@ -57,10 +57,7 @@ function doPost(e) {
     }
     assertToken_(body.token);
     if (body.type === 'load') return json_({ok:true, ...loadActions_(false), reasons:loadReasons_(),version:DCM_SYNC_API_VERSION});
-    if (body.type === 'syncReasons') {
-      refreshReasonValidation_();
-      return json_({ok:true, reasons:loadReasons_(),version:DCM_SYNC_API_VERSION});
-    }
+    if (body.type === 'syncReasons') return json_({ok:true,reasons:loadReasons_(),version:DCM_SYNC_API_VERSION});
     if (body.type === 'repairReasonValidation') {
       return json_({ok:true,...withActionLock_(function(){return repairActionReasonValidation();})});
     }
@@ -468,7 +465,7 @@ function saveActions_(actions, editor, mode) {
   const reasons=isSnapshot?null:loadReasons_();
   const nowIso=Utilities.formatDate(new Date(),'Asia/Seoul',"yyyy-MM-dd'T'HH:mm:ssXXX");
   const historyRows=[];
-  let changedRows=0,latestAt='',latestBy='',reasonRuleReady=false;
+  let changedRows=0,latestAt='',latestBy='';
   (actions||[]).forEach(function(a){
     if(!a||!a.key)return;
     const found=rowByKey.get(a.key),parts=String(a.key).split('|||'),prev=found?found.values:Array(13).fill('');
@@ -503,7 +500,7 @@ function saveActions_(actions, editor, mode) {
         if(raw && !Object.prototype.hasOwnProperty.call(reasons,raw))throw new Error('원인코드 '+raw+'가 Config에 등록되지 않았습니다.');
         if(oldCode===raw && (old||raw===''))return;
         value=raw?reasonText_(raw,reasons):'';
-        if(!reasonRuleReady){refreshReasonValidation_();reasonRuleReady=true;}
+        // Never rebuild column validation on ordinary saves. A single-cell repair occurs only on mismatch.
       }else if(field==='status'){
         if(raw && !['TODO','IN_PROGRESS','WAITING','DONE'].includes(raw))throw new Error('유효하지 않은 Action 상태입니다.');
         value=statusLabel_(raw||'TODO');
@@ -564,24 +561,15 @@ function ensureReasonConfig_() {
   if(missing.length)cfg.getRange(cfg.getLastRow()+1,1,missing.length,2).setValues(missing);
   return cfg;
 }
+
 function syncReasons_(reasons) {
-  const cfg=ensureReasonConfig_();
-  const merged={...DCM_REASON_DEFAULTS,...(reasons||{})};
-  const existing=cfg.getLastRow()>=2?cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues():[];
-  const found=new Set(existing.map(r=>canonicalReasonCode_(r[0])).filter(Boolean));
-  const missing=Object.entries(merged).filter(([code,label])=>/^\d{2}$/.test(code)&&
-    String(label||'').trim()&&!found.has(code));
-  if(missing.length)cfg.getRange(cfg.getLastRow()+1,1,missing.length,2).setValues(missing);
-  refreshReasonValidation_();
+  // Legacy callers must not trigger a full H-column rewrite during routine Sync.
+  // Vocabulary is fixed to seven options regardless of a stale Config 08 row.
+  return {...DCM_REASON_DEFAULTS};
 }
 function loadReasons_() {
-  const dictionary={...DCM_REASON_DEFAULTS};
-  const cfg=SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_CONFIG_SHEET);
-  if(cfg&&cfg.getLastRow()>=2)cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues().forEach(r=>{
-    const code=canonicalReasonCode_(r[0]),label=String(r[1]||'').trim();
-    if(/^\d{2}$/.test(code)&&label)dictionary[code]=label;
-  });
-  return dictionary;
+  // Static canonical vocabulary. Do not open/modify Spreadsheet Config on read requests.
+  return {...DCM_REASON_DEFAULTS};
 }
 
 function refreshReasonValidation_() {
@@ -594,7 +582,7 @@ function refreshReasonValidation_() {
   const rule=SpreadsheetApp.newDataValidation()
     .requireValueInList(labels,true)
     .setAllowInvalid(true)
-    .setHelpText('원인코드 01~08 중 선택하세요. 과거 입력값은 자동 삭제되지 않습니다.')
+    .setHelpText('원인코드 01~07 중 선택하세요. 이전 기록은 관리자가 검토하세요.')
     .build();
   const rowCount=Math.max(2,sh.getMaxRows?sh.getMaxRows():Math.max(sh.getLastRow(),1000));
   const entireH=sh.getRange(2,8,rowCount-1,1);
@@ -622,7 +610,7 @@ function inspectActionReasonValidation_() {
       hasRule:!!rule,
       allowInvalid:rule&&typeof rule.getAllowInvalid==='function'?rule.getAllowInvalid():null,
       type:rule&&typeof rule.getCriteriaType==='function'?String(rule.getCriteriaType()):null,
-      allows08:options?options.some(s=>String(s).startsWith('08 ')):null
+      validSeven:options?options.length===7&&options.some(s=>String(s)==='05 도매몰 미연동')&&!options.some(s=>String(s).startsWith('08 ')):null
     };
   });
   return result;
@@ -630,7 +618,7 @@ function inspectActionReasonValidation_() {
 function repairActionReasonValidation() {
   const result=refreshReasonValidation_();
   const audit=inspectActionReasonValidation_();
-  const blocked=Object.entries(audit).filter(([key,value])=>!value.hasRule||value.allowInvalid!==true||value.allows08===false);
+  const blocked=Object.entries(audit).filter(([key,value])=>!value.hasRule||value.allowInvalid!==true||value.validSeven!==true);
   if(blocked.length)throw new Error('H열 입력 규칙 복구 후 검증이 실패했습니다: '+blocked.map(x=>x[0]).join(','));
   return {repaired:true,version:DCM_SYNC_API_VERSION,changedCellContents:0,
     updatedRows:result.updatedRows,acceptedCodes:result.acceptedCodes,audit:audit};
@@ -640,27 +628,25 @@ function repairActionReasonValidation() {
  * and retries once if Sheets still returns a validation rejection.
  */
 function setReasonCellSafely_(sh,row,value) {
-  const range=sh.getRange(row,8,1,1);
-  const existing=range.getDataValidation();
-  const criteria=existing&&typeof existing.getCriteriaValues==='function'?existing.getCriteriaValues():null;
-  const choices=criteria&&Array.isArray(criteria[0])?criteria[0]:null;
-  if(!existing || (typeof existing.getAllowInvalid==='function'&&!existing.getAllowInvalid()) ||
-    (choices&&!choices.some(s=>String(s).startsWith('08 ')))){
-    refreshReasonValidation_();
-  }
-  try {
-    range.setValue(value);
-  } catch(err){
+  const cell=sh.getRange(row,8,1,1);
+  // Normal case is a single cell write; no 1,000-row validation rewrite here.
+  try {cell.setValue(value);return;}
+  catch(err) {
     const message=String(err&&err.message||err);
     if(!/validation|유효성|데이터 확인 규칙|입력 규칙|violates/i.test(message))throw err;
-    refreshReasonValidation_();
-    // A second rejection is a real issue. Never pretend the write succeeded.
-    range.setValue(value);
+    const labels=Object.entries(DCM_REASON_DEFAULTS).map(([k,v])=>k+' '+v);
+    const rule=SpreadsheetApp.newDataValidation().requireValueInList(labels,true)
+      .setAllowInvalid(false).build();
+    // Repair only the offending cell, retry once and report a real failure.
+    cell.setDataValidation(rule);
+    cell.setValue(value);
   }
 }
 
 function reasonCode_(text, cachedReasons) {
   const str=String(text||'').trim(),reasons=cachedReasons||loadReasons_();
+  // 08 used to mean a mall-linkage issue; the approved seven-code scale now maps it to 05.
+  if(/^0?8(?:\s|$)/.test(str))return '05';
   return Object.keys(reasons).sort((a,b)=>b.length-a.length).find(k=>str===k||str.startsWith(k+' '))||'';
 }
 function reasonText_(code, cachedReasons) {
