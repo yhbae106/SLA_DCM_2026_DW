@@ -39,7 +39,7 @@ class MockSheet {
 }
 const defaults=[
  ['01','ERP/시스템 미구축'],['02','도입 품목 미연동'],['03','전산/데이터 오류'],
- ['04','거래처 연동 거부/미협조'],['05','공급·거래 중단 예정'],
+ ['04','거래처 연동 거부/미협조'],['05','도매몰 미연동'],
  ['06','신규 거래처 연동 예정'],['07','당월 매출 미발생']
 ];
 const masterRows=[['key','businessNo','priority','businessName','outlet','manager','aging','reason','plan','due','status','editor','time',...Array(7).fill('')]];
@@ -47,7 +47,7 @@ for(let i=2;i<=140;i++)masterRows.push(['백제약품 대전|||'+i,String(i),'P2
 masterRows[30][7]='이전 버전 사용자 정의 원인';
 masterRows[109][7]='08 도매몰 연동 필요';
 const sheet=new MockSheet('Action Board',masterRows);
-const cfg=new MockSheet('Config',[['code','label'],...defaults,[8,'도매몰 연동 필요']],2);
+const cfg=new MockSheet('Config',[['code','label'],...defaults],2);
 const history=new MockSheet('History',[['eventId','key','업체/권역','사업자번호','실사업자명','담당자','변경필드','이전값','변경값','수정자','수정시간']],11);
 const dashboard=new MockSheet('Dashboard Data',[['month','outlet','manager','businessNo','businessName','대웅제약','대웅바이오','한올바이오','savedAt'],['2026-09','백제약품 대전','정직한','31','도도매 31','X','X','','']],9);
 const sheets=new Map([['Action Board',sheet],['Config',cfg],['History',history],['Dashboard Data',dashboard]]);
@@ -81,11 +81,14 @@ ok('H110 remains untouched when master edits status');
 call('saveActions_',[{key:'백제약품 대전|||31',priority:'P1',manager:'정직한'}],'','snapshot');
 if(sheet.rows[30][7]!==initial31)fail('Risk snapshot overwrote historical H31');
 ok('Risk snapshot writes metadata without touching H');
-call('saveActions_',[{key:'백제약품 대전|||50',changedFields:['reasonCode'],reasonCode:'08'}],'정직한','edit');
-if(sheet.rows[49][7]!=='08 도매몰 연동 필요')fail('Reason 08 could not be saved');
-if(!cfg.rows.some(r=>r[0]==='08'))fail('Numeric code 8 was not normalized to two-character string 08');
-if(sheet.rules.get('31:8').allowInvalid!==true)fail('Historical H rules still strict');
-ok('Reason 08 accepted, Config aligned, legacy H validation relaxed');
+let rejectEight=false;
+try{call('saveActions_',[{key:'백제약품 대전|||50',changedFields:['reasonCode'],reasonCode:'08'}],'정직한','edit');}
+catch(_){rejectEight=true;}
+if(!rejectEight)fail('Retired reason 08 was incorrectly accepted');
+call('saveActions_',[{key:'백제약품 대전|||50',changedFields:['reasonCode'],reasonCode:'05'}],'정직한','edit');
+if(sheet.rows[49][7]!=='05 도매몰 미연동')fail('05 must be saved with the new label');
+if(sheet.rules.get('31:8').getAllowInvalid?.()===true)fail('Unrelated H31 was rewritten during save');
+ok('New reason 05 saved; 08 rejected; unrelated H31 untouched');
 const historyBefore=history.getLastRow();
 call('savePartnerAction_','백제약품',{key:'백제약품 대전|||31',field:'plan',value:'Partner separate plan'});
 if(sheet.rows[30][8]!=='Master updated plan'||sheet.rows[30][14]!=='Partner separate plan')fail('Partner overwrote master data');
@@ -122,21 +125,19 @@ ok('Partner authentication returns lightweight response without Dashboard or Act
 context.PropertiesService=previousProps;
 
 const cellValue31=sheet.rows[30][7],cellValue110=sheet.rows[109][7];
-for(const row of [31,110,150])sheet.rules.set(row+':8',{options:defaults.map(x=>x.join(' ')),allowInvalid:false,getAllowInvalid(){return false;}});
+for(const row of [31,110,150])sheet.rules.set(row+':8',{options:['01 ERP/시스템 미구축'],allowInvalid:false,getAllowInvalid(){return false;}});
+const previousHwriteCount=sheet.writes.filter(w=>w.col===8).length;
 const repaired=call('repairActionReasonValidation');
-if(!repaired.repaired||repaired.audit.H31.allowInvalid!==true||repaired.audit.H110.allowInvalid!==true)
-  fail('repair did not turn H31/H110 into nonblocking dropdowns');
-if(!repaired.acceptedCodes.includes('08')||repaired.changedCellContents!==0)fail('repair did not preserve values/codes');
+if(!repaired.repaired||!repaired.audit.H31.validSeven||!repaired.audit.H110.validSeven)
+  fail('One-time repair did not set seven approved dropdown values');
+if(repaired.acceptedCodes.length!==7||repaired.acceptedCodes.includes('08'))fail('Wrong number of reasons');
 if(sheet.rows[30][7]!==cellValue31||sheet.rows[109][7]!==cellValue110)
-  fail('repair changed existing H values');
-if(!sheet.rules.get('150:8')?.getAllowInvalid())fail('future row H150 still has strict rule');
-if(!sheet.rules.get('31:8')?.getCriteriaValues()?.[0]?.some(x=>x.startsWith('08 ')))fail('H31 dropdown still lacks code 08');
-if(!sheet.rules.get('110:8')?.getCriteriaValues()?.[0]?.includes('08 도매몰 연동 필요'))fail('H110 alias mismatch persisted');
-if(new Set([...sheet.rules.values()]).size!==1)fail('Fragmented validation rules survived full H-column reset');
-ok('owner repair restores every H dropdown, including future rows, without editing values');
-sheet.rules.set('31:8',{options:defaults.map(x=>x.join(' ')),allowInvalid:false,getAllowInvalid(){return false;}});
-call('saveActions_',[{key:'백제약품 대전|||31',changedFields:['reasonCode'],reasonCode:'08'}],'정직한','edit');
-if(sheet.rows[30][7]!=='08 도매몰 연동 필요'||!sheet.rules.get('31:8').getAllowInvalid())
-  fail('reason write did not self-heal strict H31');
-ok('reason update detects and self-heals a newly introduced strict H31 rule');
+  fail('Validation repair changed historical H values');
+if(sheet.writes.filter(w=>w.col===8).length!==previousHwriteCount)fail('Repair rewrote H cell contents');
+ok('One-time repair changes only H validation, not historic values');
+sheet.rules.set('31:8',{options:['01 ERP/시스템 미구축'],allowInvalid:false,getAllowInvalid(){return false;}});
+call('saveActions_',[{key:'백제약품 대전|||31',changedFields:['reasonCode'],reasonCode:'05'}],'정직한','edit');
+if(sheet.rows[30][7]!=='05 도매몰 미연동')fail('Single-cell validation fallback failed');
+if(sheet.rules.get('110:8').getAllowInvalid()!==true)fail('Single-cell repair modified other H rules');
+ok('Saving reason repairs only the affected H31 cell');
 console.log('GAS_REGRESSION_OK');

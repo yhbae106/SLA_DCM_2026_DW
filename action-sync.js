@@ -9,7 +9,7 @@ const REMOTE_HASH_KEY='dcm-action-sync-last-remote';
 const REASON_HASH_KEY='dcm-action-sync-reason-hash';
 const RISK_HASH_KEY='dcm-action-sync-risk-hash';
 const REASON_SCHEMA_KEY='dcm-action-reason-schema-v2';
-const REQUIRED_API_VERSION='20261008-reason-validation-heal-v2';
+const REQUIRED_API_VERSION='20261008-seven-reasons-fast-v3';
 const REPAIR_SESSION_KEY='dcm-action-validation-repaired-v2';
 const PENDING_KEY='dcm-action-master-pending-v1';
 const originalSetItem=Storage.prototype.setItem;
@@ -21,6 +21,13 @@ function token(){return localStorage.getItem(TOKEN_KEY)||'';}
 function editor(){return localStorage.getItem(EDITOR_KEY)||CFG.editors?.[0]||'';}
 function hash(v){try{return JSON.stringify(v||[]);}catch(e){return ''}}
 function getLocalActions(){try{const x=JSON.parse(localStorage.getItem(ACTION_KEY));return Array.isArray(x)?x:[];}catch(e){return []}}
+function migrateRetiredReason08(){
+  const actions=getLocalActions(),pending=pendingEdits();let changed=false,pendingChanged=false;
+  actions.forEach(a=>{if(a?.reasonCode==='08'){a.reasonCode='05';changed=true;}});
+  pending.forEach(a=>{if(a?.reasonCode==='08'){a.reasonCode='05';pendingChanged=true;}});
+  if(changed){suppressSync=true;originalSetItem.call(localStorage,ACTION_KEY,JSON.stringify(actions));suppressSync=false;}
+  if(pendingChanged)originalSetItem.call(localStorage,PENDING_KEY,JSON.stringify(pending));
+}
 function migrateLegacyLocalReasons(){
  if(localStorage.getItem(REASON_SCHEMA_KEY)==='1')return;
  const map={'01':'01','02':'04','03':'03','04':'03','05':'06','06':'05','07':'','08':'03','09':'','99':''};
@@ -53,7 +60,7 @@ function installUI(){
    if(repairing)return;
    localStorage.setItem(TOKEN_KEY,$('ctSyncKey')?.value.trim()||'');
    const ready=await pullRemote(true,true);
-   if(ready)setStatus('H열 규칙 점검·복구 완료 ✓','ok','H31 / H110 드롭다운 및 01~08 허용 상태 확인');
+   if(ready)setStatus('H열 규칙 점검·복구 완료 ✓','ok','H31 / H110 확인: 01~07, 05 도매몰 미연동');
  });
 }
 function syncReasonOptions(){
@@ -96,14 +103,14 @@ function enrichActions(actions){
 async function post(payload){
  if(!endpoint()||!token())throw new Error(!endpoint()?'Apps Script URL 미설정':'공유키를 입력해 주세요');
  if(payload.type==='save'&&!serverReady)throw new Error('서버 코드/시트 H열 규칙 미확인 · 변경 내용은 이 브라우저에만 보관됨 · 최신 Apps Script 배포 후 동기화하세요.');
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),payload.type==='load'?30000:24000);
  try{
    const res=await fetch(endpoint(),{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...payload,token:token()}),signal:controller.signal});
    if(!res.ok){const error=new Error(res.status===404?'HTTP 404 · Google Apps Script 배포 URL이 유효하지 않습니다':'HTTP '+res.status);error.status=res.status;throw error;}
    let json;try{json=await res.json();}catch(_){throw new Error('Apps Script에서 JSON 응답을 받지 못했습니다. 배포를 확인하세요.');}
    if(!json.ok)throw new Error(json.error||'Sync 실패');
    return json;
- }catch(e){if(e.name==='AbortError')throw new Error('Apps Script 응답시간 초과 (18초)');throw e;}
+ }catch(e){if(e.name==='AbortError')throw new Error('Apps Script 응답시간 초과 · '+(payload.type==='load'?'조회 30초':'저장 24초')+' · 연결과 배포 상태를 확인해 주세요');throw e;}
  finally{clearTimeout(timer);}
 }
 async function syncReasonsIfNeeded(force=false){
@@ -206,17 +213,17 @@ async function pullRemote(force=false,forceRepair=false){
        'Apps Script /exec가 '+(json.version||'버전 정보 없음')+'을(를) 실행 중입니다. 최신 Code.gs로 기존 배포를 새 버전 업데이트해 주세요.');
      return false;
    }
-   if(forceRepair||sessionStorage.getItem(REPAIR_SESSION_KEY)!=='1'){
+   if(forceRepair){
      repairing=true;
      try{
        const repaired=await post({type:'repairReasonValidation'});
        if(!repaired.repaired||repaired.version!==REQUIRED_API_VERSION||
-         repaired.audit?.H31?.allowInvalid!==true||repaired.audit?.H110?.allowInvalid!==true||
-         repaired.audit?.H31?.allows08!==true||repaired.audit?.H110?.allows08!==true)
-         throw new Error('H31/H110 입력 규칙 복구 상태를 검증하지 못했습니다.');
-       sessionStorage.setItem(REPAIR_SESSION_KEY,'1');
-     } finally {repairing=false;}
+          repaired.audit?.H31?.allowInvalid!==true||repaired.audit?.H110?.allowInvalid!==true||
+          repaired.audit?.H31?.validSeven!==true||repaired.audit?.H110?.validSeven!==true)
+         throw new Error('H31/H110의 7개 선택지 복구를 확인하지 못했습니다.');
+     }finally{repairing=false;}
    }
+   // Normal polling must not mutate column validation.
    serverReady=true;syncBroken=false;
    if(pendingEdits().length){
      const saved=await flushPendingEdits();
@@ -224,16 +231,7 @@ async function pullRemote(force=false,forceRepair=false){
      json=await post({type:'load'});
    }
    lastPullAt=Date.now();
-   if(json.reasons&&typeof json.reasons==='object'&&!Array.isArray(json.reasons)){
-     // Keep known codes if a stale Apps Script deployment returns an incomplete Config list.
-     // The latest Google Sheet is authoritative for codes it does return.
-     const incoming=Object.fromEntries(Object.entries(json.reasons).filter(([k,v])=>/^\\d{2}$/.test(k)&&typeof v==='string'&&v.trim()).map(([k,v])=>[k,v.trim()]));
-     const merged={...REASONS,...incoming};
-     if(JSON.stringify(REASONS)!==JSON.stringify(merged)){
-       Object.assign(REASONS,merged);
-       window.dispatchEvent(new CustomEvent('dcm-action-reasons-updated'));
-     }
-   }
+   // Only canonical 01-07 options are served from action-sync-config.js; ignore older 08 metadata.
    const remote=Array.isArray(json.actions)?json.actions:[],local=getLocalActions();
    const rHash=actionHash(remote),lHash=actionHash(local);const meta=json.updatedAt?`마지막 수정: ${json.updatedBy||'-'} · ${new Date(json.updatedAt).toLocaleString('ko-KR')}`:'공용 데이터 없음';
    if(remote.length&&rHash!==lHash){
@@ -270,7 +268,7 @@ Storage.prototype.setItem=function(k,v){
 };
 function start(){
  // Preserve historic user-selected reason codes; remapping is not safe without server mapping.
- installUI();observeBoard();
+ migrateRetiredReason08();installUI();observeBoard();
  // Google Sheets Config is the source of truth; never overwrite it from the browser.
  pullRemote(false).then(ok=>{if(ok)scheduleRiskSnapshot(1400,false);});
  if(pollTimer)clearInterval(pollTimer);const poll=Math.max(30000,Number(CFG.pollMs)||30000);pollTimer=setInterval(()=>pullRemote(false),poll);
