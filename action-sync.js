@@ -122,10 +122,15 @@ async function pullRemote(force=false){
    const url=new URL(endpoint());url.searchParams.set('token',token());url.searchParams.set('type','load');
    const res=await fetch(url.toString(),{cache:'no-store'});if(!res.ok)throw new Error(`HTTP ${res.status}`);const json=await res.json();if(!json.ok)throw new Error(json.error||'불러오기 실패');
    lastPullAt=Date.now();
-   if(json.reasons&&typeof json.reasons==='object'&&!Array.isArray(json.reasons)&&JSON.stringify(REASONS)!==JSON.stringify(json.reasons)){
-     Object.keys(REASONS).forEach(k=>delete REASONS[k]);
-     Object.assign(REASONS,json.reasons);
-     window.dispatchEvent(new CustomEvent('dcm-action-reasons-updated'));
+   if(json.reasons&&typeof json.reasons==='object'&&!Array.isArray(json.reasons)){
+     // Keep known codes if a stale Apps Script deployment returns an incomplete Config list.
+     // The latest Google Sheet is authoritative for codes it does return.
+     const incoming=Object.fromEntries(Object.entries(json.reasons).filter(([k,v])=>/^\\d{2}$/.test(k)&&typeof v==='string'&&v.trim()).map(([k,v])=>[k,v.trim()]));
+     const merged={...REASONS,...incoming};
+     if(JSON.stringify(REASONS)!==JSON.stringify(merged)){
+       Object.assign(REASONS,merged);
+       window.dispatchEvent(new CustomEvent('dcm-action-reasons-updated'));
+     }
    }
    const remote=Array.isArray(json.actions)?json.actions:[],local=getLocalActions();
    const rHash=actionHash(remote),lHash=actionHash(local);const meta=json.updatedAt?`마지막 수정: ${json.updatedBy||'-'} · ${new Date(json.updatedAt).toLocaleString('ko-KR')}`:'공용 데이터 없음';
