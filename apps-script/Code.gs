@@ -9,7 +9,7 @@ const DCM_PARTNERS = ['백제약품','인천약품','복산나이스','아이팜
 function doGet(e) {
   try {
     const type = String(e && e.parameter && e.parameter.type || '');
-    if (type === 'dashboard') return json_({ok:true, ...loadDashboardData_()});
+    if (type === 'dashboard') throw new Error('마스터 데이터는 인증된 POST 요청으로만 조회할 수 있습니다.');
     assertToken_(e && e.parameter && e.parameter.token);
     return json_({ok:true, ...loadActions_(), reasons:loadReasons_()});
   } catch (err) {
@@ -33,6 +33,12 @@ function doPost(e) {
       assertPartnerPassword_(partner, body.password);
       return json_({ok:true, partner:partner, ...loadPartnerDashboardData_(partner)});
     }
+    if (body.type === 'partnerActions' || body.type === 'partnerSaveAction') {
+      const partner = normalizePartner_(body.partner);
+      assertPartnerPassword_(partner, body.password);
+      if (body.type === 'partnerActions') return json_({ok:true, ...loadPartnerActions_(partner)});
+      return json_({ok:true, ...savePartnerAction_(partner, body.action)});
+    }
     if (body.type === 'saveDashboard') {
       assertMasterPassword_(body.password);
       const result = saveDashboardData_(Array.isArray(body.data) ? body.data : [], body.editor || 'MASTER');
@@ -44,7 +50,7 @@ function doPost(e) {
       return json_({ok:true, reasons:loadReasons_()});
     }
     if (body.type !== 'save') throw new Error('지원하지 않는 요청입니다.');
-    const result = saveActions_(Array.isArray(body.actions) ? body.actions : [], body.editor || '', body.mode || 'edit');
+    const result = withActionLock_(function(){return saveActions_(Array.isArray(body.actions) ? body.actions : [], body.editor || '', body.mode || 'edit');});
     return json_({ok:true, ...result});
   } catch (err) {
     return json_({ok:false, error:String(err && err.message || err)});
@@ -138,10 +144,51 @@ function partnerOfOutlet_(outlet) {
   return '';
 }
 
+function canonicalManager_(outlet, manager) {return String(outlet || '').trim() === '백제약품 대전' ? '정직한' : String(manager || '');}
+
 function loadPartnerDashboardData_(partner) {
   const all = loadDashboardData_();
   const filtered = (all.data || []).filter(r => partnerOfOutlet_(r.outlet) === partner);
-  return {data:filtered, updatedAt:all.updatedAt, updatedBy:all.updatedBy, rowCount:filtered.length};
+  const shared=loadPartnerActions_(partner);
+  return {data:filtered, actions:shared.actions, reasons:shared.reasons, updatedAt:all.updatedAt, updatedBy:all.updatedBy, rowCount:filtered.length, actionsUpdatedAt:shared.updatedAt};
+}
+
+
+function withActionLock_(callback) {
+  const lock=LockService.getScriptLock();lock.waitLock(30000);
+  try {return callback();} finally {lock.releaseLock();}
+}
+function loadPartnerActions_(partner) {
+  const shared=loadActions_();
+  const visible=shared.actions.filter(a => partnerOfOutlet_(a.outlet || String(a.key || '').split('|||')[0]) === partner)
+    .map(a => ({key:a.key,businessNo:a.businessNo,priority:a.priority,businessName:a.businessName,
+      outlet:a.outlet,manager:canonicalManager_(a.outlet,a.manager),aging:a.aging,reasonCode:a.reasonCode,
+      plan:a.plan,dueDate:a.dueDate,status:a.status,modifiedBy:a.modifiedBy,updatedAt:a.updatedAt}));
+  return {actions:visible,reasons:loadReasons_(),updatedAt:shared.updatedAt,updatedBy:shared.updatedBy};
+}
+function savePartnerAction_(partner, incoming) {
+  if (!incoming || typeof incoming !== 'object') throw new Error('Action 데이터가 없습니다.');
+  const key=String(incoming.key || '').trim(),parts=key.split('|||');
+  if(parts.length!==2 || !parts[0] || !parts[1] || partnerOfOutlet_(parts[0])!==partner)
+    throw new Error('해당 파트너사의 거래처만 수정할 수 있습니다.');
+  const reasonCode=String(incoming.reasonCode || ''),allowedReasons=loadReasons_();
+  if(reasonCode && !Object.prototype.hasOwnProperty.call(allowedReasons,reasonCode)) throw new Error('허용되지 않은 원인코드입니다.');
+  const status=String(incoming.status || 'TODO');
+  if(['TODO','IN_PROGRESS','WAITING','DONE'].indexOf(status)<0)throw new Error('허용되지 않은 진행상태입니다.');
+  const plan=String(incoming.plan || '').trim();
+  if(plan.length>3000)throw new Error('조치계획은 3000자 이하로 입력해 주세요.');
+  const due=String(incoming.dueDate || '');
+  if(due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) throw new Error('Due Date 형식이 올바르지 않습니다.');
+  return withActionLock_(function(){
+    const shared=loadActions_(),found=shared.actions.find(a=>a.key===key);
+    const rows=loadDashboardData_().data.filter(r=>r.outlet===parts[0]&&r.businessNo===parts[1]);
+    if(!rows.length)throw new Error('마스터 데이터에 없는 거래처입니다.');
+    const r=rows[rows.length-1],fixed=found||{};
+    const clean={key:key,businessNo:r.businessNo,outlet:r.outlet,businessName:r.businessName,
+      manager:canonicalManager_(r.outlet,r.manager),priority:fixed.priority||'',aging:fixed.aging||'',
+      reasonCode:reasonCode,plan:plan,dueDate:due,status:status};
+    return saveActions_([clean],'PARTNER:'+partner,'edit');
+  });
 }
 
 function ensureDashboardSheets_() {
@@ -169,7 +216,7 @@ function loadDashboardData_() {
     sh.getRange(2,1,sh.getLastRow()-1,9).getDisplayValues().forEach(r => {
       if (!r[0] || !r[1] || !r[3]) return;
       data.push({
-        month:r[0] || '', outlet:r[1] || '', manager:r[2] || '', businessNo:r[3] || '', businessName:r[4] || '',
+        month:r[0] || '', outlet:r[1] || '', manager:canonicalManager_(r[1],r[2]), businessNo:r[3] || '', businessName:r[4] || '',
         statuses:{'대웅제약':r[5] || null,'대웅바이오':r[6] || null,'한올바이오':r[7] || null}
       });
     });
@@ -194,7 +241,7 @@ function saveDashboardData_(data, editor) {
       if (!r || !r.month || !r.outlet || !r.businessNo) return;
       const s = r.statuses || {};
       clean.push([
-        String(r.month), String(r.outlet), String(r.manager || ''), String(r.businessNo), String(r.businessName || ''),
+        String(r.month), String(r.outlet), canonicalManager_(r.outlet,r.manager), String(r.businessNo), String(r.businessName || ''),
         normalizeOx_(s['대웅제약']), normalizeOx_(s['대웅바이오']), normalizeOx_(s['한올바이오']), nowIso
       ]);
     });
