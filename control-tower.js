@@ -3,7 +3,7 @@
 const L=window.DCMLogic,CFG=window.DCM_CONFIG,DATA_KEY='dcm-dashboard-v8-data',ACTION_KEY='dcm-dashboard-v10-actions';
 if(!L||!CFG){console.error('[DCM Control Tower] DCMLogic/DCM_CONFIG not loaded');return;}
 const E=L.E,$=id=>document.getElementById(id),TARGET=.95;
-const reasons={'01':'시스템 미구축','02':'거래처 사용거부','03':'ERP Interface 오류','04':'Master 불일치','05':'신규거래처','06':'공급중단 예정','07':'사용법 미숙','08':'데이터 오류','09':'확인 중','99':'기타'};
+const reasons=window.DCM_ACTION_REASONS||{};
 let initialized=false;
 function clone(x){return JSON.parse(JSON.stringify(x));}
 function loadData(){try{const x=JSON.parse(localStorage.getItem(DATA_KEY));if(Array.isArray(x)&&x.length)return x;}catch(e){console.warn('[DCM Control Tower] local data read failed',e);}return clone(window.DCM_BASE_DATA||[]);}
@@ -49,4 +49,6 @@ function installBackup(){const old=$('backupBtn');if(old&&!old.dataset.ctBound){
 function init(){if(initialized)return;const required=['month','manager','outlet','ctRate','ctAge1','ctTargetNow'];if(required.some(id=>!$(id))){setTimeout(init,50);return;}initialized=true;installBackup();$('ctPrint')?.addEventListener('click',()=>window.print());$('ctClose')?.addEventListener('click',()=>$('ctModal')?.classList.remove('open'));['manager','outlet','month'].forEach(id=>$(id)?.addEventListener('change',()=>setTimeout(render,0)));$('fileInput')?.addEventListener('change',()=>setTimeout(render,900));render();setTimeout(()=>{if(!window.DCM_CONTROL_TOWER_OK)render();},300);}
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
 window.addEventListener('load',()=>{init();setTimeout(render,0);},{once:true});
+window.addEventListener('dcm-action-sync-applied',()=>{actions=loadActions();render();});
+window.addEventListener('dcm-action-reasons-updated',()=>{actions=loadActions();render();});
 })();

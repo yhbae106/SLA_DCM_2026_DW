@@ -11,7 +11,7 @@ function doGet(e) {
     const type = String(e && e.parameter && e.parameter.type || '');
     if (type === 'dashboard') return json_({ok:true, ...loadDashboardData_()});
     assertToken_(e && e.parameter && e.parameter.token);
-    return json_({ok:true, ...loadActions_()});
+    return json_({ok:true, ...loadActions_(), reasons:loadReasons_()});
   } catch (err) {
     return json_({ok:false, error:String(err && err.message || err)});
   }
@@ -40,8 +40,8 @@ function doPost(e) {
     }
     assertToken_(body.token);
     if (body.type === 'syncReasons') {
-      syncReasons_(body.reasons || {});
-      return json_({ok:true});
+      refreshReasonValidation_();
+      return json_({ok:true, reasons:loadReasons_()});
     }
     if (body.type !== 'save') throw new Error('지원하지 않는 요청입니다.');
     const result = saveActions_(Array.isArray(body.actions) ? body.actions : [], body.editor || '', body.mode || 'edit');
@@ -93,10 +93,11 @@ function setupDcmActionSync() {
     hist.getRange(1,1,1,11).setValues([['eventId','key','업체/권역','사업자번호','실사업자명','담당자','변경필드','이전값','변경값','수정자','수정시간']]);
   }
   ensureDashboardSheets_();
-  syncReasons_({
+  if (!Object.keys(loadReasons_()).length) syncReasons_({
     '01':'ERP/시스템 미구축','02':'도입 품목 미연동','03':'전산/데이터 오류','04':'거래처 연동 거부/미협조',
     '05':'공급·거래 중단 예정','06':'신규 거래처 연동 예정','07':'당월 매출 미발생'
   });
+  else refreshReasonValidation_();
 }
 
 function assertToken_(token) {
@@ -308,7 +309,28 @@ function syncReasons_(reasons) {
   if (labels.length) sh.getRange('H2:H1000').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(labels, true).setAllowInvalid(false).build());
 }
 
-function reasonCode_(text) { const m = String(text || '').match(/^(\d{2})/); return m ? m[1] : ''; }
+function loadReasons_() {
+  const sh=SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_CONFIG_SHEET);
+  const reasons={};
+  if (!sh||sh.getLastRow()<2) return reasons;
+  sh.getRange(2,1,sh.getLastRow()-1,2).getDisplayValues().forEach(row=>{
+    const code=String(row[0]||'').trim(),label=String(row[1]||'').trim();
+    if(code&&label&&!Object.prototype.hasOwnProperty.call(reasons,code))reasons[code]=label;
+  });
+  return reasons;
+}
+function refreshReasonValidation_() {
+  const sh=SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_SHEET);
+  if(!sh)return;
+  const reasons=loadReasons_(),labels=Object.keys(reasons).map(k=>k+' '+reasons[k]);
+  const range=sh.getRange('H2:H1000');
+  if(labels.length)range.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(labels,true).setAllowInvalid(false).build());
+  else range.clearDataValidations();
+}
+function reasonCode_(text) {
+  const str=String(text||'').trim(),reasons=loadReasons_();
+  return Object.keys(reasons).sort((a,b)=>b.length-a.length).find(k=>str===k||str.startsWith(k+' '))||'';
+}
 function reasonText_(code) {
   const cfg = SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_CONFIG_SHEET);
   if (!code || !cfg || cfg.getLastRow() < 2) return '';
