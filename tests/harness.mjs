@@ -76,8 +76,15 @@ const liveSync=read('action-sync.js');
 if(!liveSync.includes("post({type:'load'})"))fail('Action read must use authenticated POST load');
 if(liveSync.includes("url.searchParams.set('token'"))fail('Secret must not be sent in GET URL');
 if(!liveSync.includes('syncBroken=true'))fail('HTTP404 retry circuit breaker missing');
-if(!liveSync.includes("REQUIRED_API_VERSION='20261008-reason-validation-heal-v2'"))fail('Exact GAS deployment version gate missing');
+if(!liveSync.includes("REQUIRED_API_VERSION='20261008-seven-reasons-fast-v3'"))fail('Exact GAS deployment version gate missing');
 if(!liveSync.includes("post({type:'repairReasonValidation'})"))fail('One-click H31/H110 repair call missing');
+if(liveSync.includes("sessionStorage.getItem(REPAIR_SESSION_KEY)!=='1'"))fail('Full H validation rebuild still runs during normal Sync');
+const reasonConfig=read('action-sync-config.js');
+if(!reasonConfig.includes("'05':'도매몰 미연동'")||reasonConfig.includes("'08':'도매몰 연동 필요'"))
+  fail('Dashboard reason dictionary is not the approved seven-code scale');
+if(!gas.includes("const DCM_SYNC_API_VERSION = '20261008-seven-reasons-fast-v3'"))
+  fail('Backend deployment version not updated');
+
 if(!liveSync.includes("PENDING_KEY='dcm-action-master-pending-v1'"))fail('Unsent master edits are not persisted');
 if(!liveSync.includes('if(!saved)return false'))fail('Failed pending writes may be overwritten by remote sync');
 if(!liveSync.includes('ctReasonRepair'))fail('Master sheet repair button missing');
