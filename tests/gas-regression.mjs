@@ -8,6 +8,7 @@ class MockSheet {
   constructor(name,rows=[],columns=20){this.name=name;this.rows=rows.map(r=>[...r]);this.columns=columns;this.rules=new Map();this.writes=[];}
   getLastRow(){return this.rows.length;}
   getMaxColumns(){return this.columns;}
+  getMaxRows(){return 1000;}
   insertColumnsAfter(col,count){this.columns+=count;}
   hideSheet(){}
   clearContents(){this.rows=[];}
@@ -27,9 +28,11 @@ class MockSheet {
     }
     return {
       getDisplayValues(){return Array.from({length:n},(_,i)=>Array.from({length:w},(_,j)=>String(at(start+i,col+j))));},
+      getDataValidation(){return sheet.rules.get(start+':'+col)||null;},
       setValues(vals){if(vals.length!==n)throw new Error('Row count mismatch');vals.forEach((r,i)=>{if(r.length!==w)throw new Error('Width mismatch');r.forEach((x,j)=>store(start+i,col+j,x));});},
       setValue(value){if(n!==1||w!==1)throw new Error('setValue range mismatch');store(start,col,value);},
       clearDataValidations(){for(let i=0;i<n;i++)for(let j=0;j<w;j++)sheet.rules.delete((start+i)+':'+(col+j));},
+      setNumberFormat(format){sheet.lastNumberFormat=format;},
       setDataValidation(rule){for(let i=0;i<n;i++)for(let j=0;j<w;j++)sheet.rules.set((start+i)+':'+(col+j),rule);}
     };
   }
@@ -44,16 +47,20 @@ for(let i=2;i<=140;i++)masterRows.push(['백제약품 대전|||'+i,String(i),'P2
 masterRows[30][7]='이전 버전 사용자 정의 원인';
 masterRows[109][7]='08 도매몰 연동 필요';
 const sheet=new MockSheet('Action Board',masterRows);
-const cfg=new MockSheet('Config',[['code','label'],...defaults],2);
+const cfg=new MockSheet('Config',[['code','label'],...defaults,[8,'도매몰 연동 필요']],2);
 const history=new MockSheet('History',[['eventId','key','업체/권역','사업자번호','실사업자명','담당자','변경필드','이전값','변경값','수정자','수정시간']],11);
 const dashboard=new MockSheet('Dashboard Data',[['month','outlet','manager','businessNo','businessName','대웅제약','대웅바이오','한올바이오','savedAt'],['2026-09','백제약품 대전','정직한','31','도도매 31','X','X','','']],9);
 const sheets=new Map([['Action Board',sheet],['Config',cfg],['History',history],['Dashboard Data',dashboard]]);
 const ss={getSheetByName:n=>sheets.get(n)||null,insertSheet:n=>{const x=new MockSheet(n);sheets.set(n,x);return x;}};
 for(let i=2;i<=140;i++)sheet.rules.set(i+':8',{options:defaults.map(x=>x.join(' ')),allowInvalid:false});
+sheet.rules.set('110:8',{options:[...defaults.map(x=>x.join(' ')),'08 도매몰 미연동'],allowInvalid:false,
+  getAllowInvalid(){return false;},getCriteriaValues(){return [this.options,true];}});
 const context={
   SpreadsheetApp:{openById:()=>ss,newDataValidation:()=>{
-    const object={options:[],allowInvalid:false};
-    return {requireValueInList(x){object.options=x;return this;},setAllowInvalid(v){object.allowInvalid=v;return this;},build(){return {...object}}};
+    const object={options:[],allowInvalid:false,helpText:''};
+    return {requireValueInList(x){object.options=x;return this;},setAllowInvalid(v){object.allowInvalid=v;return this;},
+      setHelpText(t){object.helpText=t;return this;},
+      build(){const snap={...object};return {...snap,getAllowInvalid(){return snap.allowInvalid;},getCriteriaType(){return 'VALUE_IN_LIST';},getCriteriaValues(){return [snap.options,true];}};}};
   },flush(){}},
   Utilities:{getUuid:()=>String(Math.random()),formatDate:()=>new Date('2026-10-08T10:00:00Z').toISOString(),
     base64EncodeWebSafe:v=>Buffer.from(v).toString('base64url'),Charset:{UTF_8:'utf8'}},
@@ -76,7 +83,7 @@ if(sheet.rows[30][7]!==initial31)fail('Risk snapshot overwrote historical H31');
 ok('Risk snapshot writes metadata without touching H');
 call('saveActions_',[{key:'백제약품 대전|||50',changedFields:['reasonCode'],reasonCode:'08'}],'정직한','edit');
 if(sheet.rows[49][7]!=='08 도매몰 연동 필요')fail('Reason 08 could not be saved');
-if(!cfg.rows.some(r=>r[0]==='08'))fail('Code 08 not added to sheet config');
+if(!cfg.rows.some(r=>r[0]==='08'))fail('Numeric code 8 was not normalized to two-character string 08');
 if(sheet.rules.get('31:8').allowInvalid!==true)fail('Historical H rules still strict');
 ok('Reason 08 accepted, Config aligned, legacy H validation relaxed');
 const historyBefore=history.getLastRow();
@@ -113,4 +120,23 @@ const loginJson=JSON.parse(call('doPost',{postData:{contents:JSON.stringify({typ
 if(!loginJson.ok||!loginJson.partner||loginJson.data||loginJson.actions)fail('Login unnecessarily waits for data and actions');
 ok('Partner authentication returns lightweight response without Dashboard or Action data');
 context.PropertiesService=previousProps;
+
+const cellValue31=sheet.rows[30][7],cellValue110=sheet.rows[109][7];
+for(const row of [31,110,150])sheet.rules.set(row+':8',{options:defaults.map(x=>x.join(' ')),allowInvalid:false,getAllowInvalid(){return false;}});
+const repaired=call('repairActionReasonValidation');
+if(!repaired.repaired||repaired.audit.H31.allowInvalid!==true||repaired.audit.H110.allowInvalid!==true)
+  fail('repair did not turn H31/H110 into nonblocking dropdowns');
+if(!repaired.acceptedCodes.includes('08')||repaired.changedCellContents!==0)fail('repair did not preserve values/codes');
+if(sheet.rows[30][7]!==cellValue31||sheet.rows[109][7]!==cellValue110)
+  fail('repair changed existing H values');
+if(!sheet.rules.get('150:8')?.getAllowInvalid())fail('future row H150 still has strict rule');
+if(!sheet.rules.get('31:8')?.getCriteriaValues()?.[0]?.some(x=>x.startsWith('08 ')))fail('H31 dropdown still lacks code 08');
+if(!sheet.rules.get('110:8')?.getCriteriaValues()?.[0]?.includes('08 도매몰 연동 필요'))fail('H110 alias mismatch persisted');
+if(new Set([...sheet.rules.values()]).size!==1)fail('Fragmented validation rules survived full H-column reset');
+ok('owner repair restores every H dropdown, including future rows, without editing values');
+sheet.rules.set('31:8',{options:defaults.map(x=>x.join(' ')),allowInvalid:false,getAllowInvalid(){return false;}});
+call('saveActions_',[{key:'백제약품 대전|||31',changedFields:['reasonCode'],reasonCode:'08'}],'정직한','edit');
+if(sheet.rows[30][7]!=='08 도매몰 연동 필요'||!sheet.rules.get('31:8').getAllowInvalid())
+  fail('reason write did not self-heal strict H31');
+ok('reason update detects and self-heals a newly introduced strict H31 rule');
 console.log('GAS_REGRESSION_OK');
