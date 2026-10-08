@@ -45,13 +45,13 @@ function installUI(){
  head.appendChild(wrap);
  $('ctSyncEditor')?.addEventListener('change',e=>localStorage.setItem(EDITOR_KEY,e.target.value));
  $('ctSyncKey')?.addEventListener('change',e=>localStorage.setItem(TOKEN_KEY,e.target.value.trim()));
- $('ctSyncConnect')?.addEventListener('click',async()=>{localStorage.setItem(TOKEN_KEY,$('ctSyncKey')?.value.trim()||'');await syncReasonsIfNeeded(true);await pullRemote(true);scheduleRiskSnapshot(250,true);});
+ $('ctSyncConnect')?.addEventListener('click',async()=>{localStorage.setItem(TOKEN_KEY,$('ctSyncKey')?.value.trim()||'');await pullRemote(true);scheduleRiskSnapshot(250,true);});
 }
 function syncReasonOptions(){
  document.querySelectorAll('#ctActionBody select[data-field="reasonCode"],#ctActionBody select[data-allx-field="reasonCode"]').forEach(sel=>{
    const cur=sel.value;
    const html=['<option value="">원인 선택</option>',...Object.entries(REASONS).map(([k,v])=>`<option value="${esc(k)}">${esc(k)} ${esc(v)}</option>`)].join('');
-   if(sel.dataset.reasonSource!=='github'){sel.innerHTML=html;sel.dataset.reasonSource='github';sel.value=cur;}
+   if(sel.dataset.reasonHtml!==html){sel.innerHTML=html;sel.dataset.reasonHtml=html;if(cur&&!Object.prototype.hasOwnProperty.call(REASONS,cur))sel.add(new Option(cur+' (이전 원인)',cur));sel.value=cur;}
  });
 }
 function allRiskRows(){
@@ -121,7 +121,13 @@ async function pullRemote(force=false){
    setStatus('동기화 확인 중…','working');
    const url=new URL(endpoint());url.searchParams.set('token',token());url.searchParams.set('type','load');
    const res=await fetch(url.toString(),{cache:'no-store'});if(!res.ok)throw new Error(`HTTP ${res.status}`);const json=await res.json();if(!json.ok)throw new Error(json.error||'불러오기 실패');
-   lastPullAt=Date.now();const remote=Array.isArray(json.actions)?json.actions:[],local=getLocalActions();
+   lastPullAt=Date.now();
+   if(json.reasons&&typeof json.reasons==='object'&&!Array.isArray(json.reasons)&&JSON.stringify(REASONS)!==JSON.stringify(json.reasons)){
+     Object.keys(REASONS).forEach(k=>delete REASONS[k]);
+     Object.assign(REASONS,json.reasons);
+     window.dispatchEvent(new CustomEvent('dcm-action-reasons-updated'));
+   }
+   const remote=Array.isArray(json.actions)?json.actions:[],local=getLocalActions();
    const rHash=actionHash(remote),lHash=actionHash(local);const meta=json.updatedAt?`마지막 수정: ${json.updatedBy||'-'} · ${new Date(json.updatedAt).toLocaleString('ko-KR')}`:'공용 데이터 없음';
    if(remote.length&&rHash!==lHash){
      if(isEditing()&&!force){setStatus('새 공용 데이터 있음','working',meta);return;}
@@ -143,7 +149,7 @@ Storage.prototype.setItem=function(k,v){
 };
 function start(){
  migrateLegacyLocalReasons();installUI();observeBoard();
- syncReasonsIfNeeded(false).catch(e=>console.warn('[DCM Action Sync] reason sync failed',e));
+ // Google Sheets Config is the source of truth; never overwrite it from the browser.
  pullRemote(false).then(()=>scheduleRiskSnapshot(1400,false));
  if(pollTimer)clearInterval(pollTimer);const poll=Math.max(180000,Number(CFG.pollMs)||180000);pollTimer=setInterval(()=>pullRemote(false),poll);
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastPullAt>poll)pullRemote(false);});
