@@ -48,4 +48,25 @@ const localAssets=[...new Set(refs)].filter(exists);
 const initialBytes=fs.statSync('index.html').size+localAssets.reduce((s,p)=>s+fs.statSync(p).size,0);
 if(initialBytes>560000)fail('Initial local payload budget exceeded: '+initialBytes);
 ok('initial local payload '+Math.round(initialBytes/1024)+' KB');
+
+const expectedKpiOrder=['ctRate','ctDelta','ctX','ctNeedAbs','ctPersist','ctAll3','ctX2O','ctO2X','ctSupply'];
+let lastKpiIndex=-1;
+for(const id of expectedKpiOrder){
+  const pos=html.indexOf('id="'+id+'"');
+  if(pos<0||pos<=lastKpiIndex)fail('KPI missing or out of order: '+id);
+  lastKpiIndex=pos;
+}
+ok('nine executive KPI cards in requested priority order');
+vm.runInContext(read('data/base-data.js'),ctx);
+const daejeon=ctx.DCM_BASE_DATA.filter(r=>r.outlet==='백제약품 대전');
+if(!daejeon.length||daejeon.some(r=>r.manager!=='정직한'))fail('Historical Daejeon manager not corrected');
+if(ctx.DCM_CONFIG.managerByOutlet['백제약품 대전']!=='정직한')fail('Daejeon default mapping incorrect');
+ok('all '+daejeon.length+' historical Daejeon records and mapping owned by Jeong');
+const gas=read('apps-script/Code.gs');
+new Function(gas);
+if(/partnerSaveAction|savePartnerAction_/.test(gas))fail('Unexpected Partner write-back endpoint');
+if(!gas.includes("body.type === 'partnerActions'")||!gas.includes("assertPartnerPassword_(partner, body.password)"))fail('Authenticated Partner Action read endpoint missing');
+if(!gas.includes("type === 'dashboard') throw"))fail('Public Dashboard GET unexpectedly enabled');
+if(!gas.includes('fixDaejeonManagersInSheets'))fail('Owner-run historical repair utility missing');
+ok('Apps Script Action read-only auth and historical repair');
 console.log('HARNESS_OK');

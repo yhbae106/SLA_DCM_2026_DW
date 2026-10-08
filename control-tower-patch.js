@@ -8,11 +8,11 @@ const statusLabel=s=>({TODO:'미조치',IN_PROGRESS:'진행중',WAITING:'업체�
 let actionOpen=false,actionLimit=PAGE_SIZE,actionTimer=null;
 function ensureHeroKpis(){
   const grid=document.querySelector('.ct-hero .ct-kpis');if(!grid)return;
-  const rate=$('ctRate')?.closest('.ct-kpi'),delta=$('ctDelta')?.closest('.ct-kpi'),x=$('ctX')?.closest('.ct-kpi'),x2o=$('ctX2O')?.closest('.ct-kpi'),o2x=$('ctO2X')?.closest('.ct-kpi'),persist=$('ctPersist')?.closest('.ct-kpi');
+  const rate=$('ctRate')?.closest('.ct-kpi'),delta=$('ctDelta')?.closest('.ct-kpi'),x=$('ctX')?.closest('.ct-kpi'),x2o=$('ctX2O')?.closest('.ct-kpi'),o2x=$('ctO2X')?.closest('.ct-kpi'),persist=$('ctPersist')?.closest('.ct-kpi'),all3=$('ctAll3')?.closest('.ct-kpi');
   if(!$('ctNeedAbs')){const card=document.createElement('div');card.className='ct-kpi ct-kpi-bad';card.innerHTML='<div class="l">연동이 필요한 도도매처수</div><div class="v" id="ctNeedAbs">-</div><div class="s" id="ctNeedAbsSub">실사업자번호 기준 연동 필요 절대처수</div>';grid.appendChild(card);}
   if(!$('ctSupply')){const card=document.createElement('div');card.className='ct-kpi ct-kpi-info';card.innerHTML='<div class="l">도도매 공급처수</div><div class="v" id="ctSupply">-</div><div class="s" id="ctSupplySub">현재 공급 중인 도도매 절대처수</div>';grid.appendChild(card);}
-  [rate,delta,x,$('ctNeedAbs')?.closest('.ct-kpi'),x2o,o2x,persist,$('ctSupply')?.closest('.ct-kpi')].forEach(el=>{if(el)grid.appendChild(el);});
-  rate?.classList.add('ct-kpi-good');delta?.classList.add('ct-kpi-delta');x?.classList.add('ct-kpi-bad');x2o?.classList.add('ct-kpi-good');o2x?.classList.add('ct-kpi-bad');persist?.classList.add('ct-kpi-warn');
+  [rate,delta,x,$('ctNeedAbs')?.closest('.ct-kpi'),persist,all3,x2o,o2x,$('ctSupply')?.closest('.ct-kpi')].forEach(el=>{if(el)grid.appendChild(el);});
+  rate?.classList.add('ct-kpi-good');delta?.classList.add('ct-kpi-delta');x?.classList.add('ct-kpi-bad');x2o?.classList.add('ct-kpi-good');o2x?.classList.add('ct-kpi-bad');persist?.classList.add('ct-kpi-warn');all3?.classList.add('ct-kpi-bad');
 }
 function syncHeroSupportKpis(){
   const copy=(src,dst)=>{const a=$(src),b=$(dst);if(a&&b)b.textContent=a.textContent||'-';};copy('kpiAbs','ctNeedAbs');copy('kpiSupply','ctSupply');
