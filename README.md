@@ -63,3 +63,28 @@
 - `partnerLogin`은 코드 검사만 반환합니다. `partnerDashboard`와 `partnerActions`는 독립 조회하고 데이터는 90초 파트너별 분할 CacheService로 캐시합니다.
 - `partnerSaveActions`는 최대 50개 필드를 한 번에 업체 전용 N:T에 기록합니다. A:M 마스터 데이터를 덮어쓰지 않습니다.
 - IMPORTANT: GitHub Pages 병합만으로 Apps Script 배포는 변경되지 않습니다. Apps Script 편집기에서 **새 코드로 동일 웹앱을 재배포**하고, URL이 달라졌으면 양 저장소의 endpoint를 수정해야 합니다.
+
+
+## 2026-10-08 H31/H110 데이터 확인 규칙 반복 오류 — 최종 복구 절차
+
+### 원인 분리
+- **구글시트의 Action Board H열:** 기존 01~07만 허용하는 셀별 엄격한 유효성 검사가 남아 있을 수 있습니다.
+- **GAS 배포:** GitHub `Code.gs` 수정만으로 기존 /exec 실행 버전은 바뀌지 않습니다.
+- **대시보드 구버전:** 최신 JS는 `20261008-reason-validation-heal-v2` 버전의 Apps Script 확인/시트 규칙 복구가 끝나기 전까지 서버 저장을 차단합니다. 변경 데이터는 `dcm-action-master-pending-v1`에 임시 보관합니다.
+
+### 반드시 1회 수행할 실제 Sheet 복구
+1. Google Apps Script 편집기에서 이 저장소의 `apps-script/Code.gs` 전체를 적용하고 저장합니다.
+2. 함수 목록에서 `repairActionReasonValidation`을 선택해 **실행**합니다. 최초 실행이라면 권한을 승인합니다.
+3. 실행 결과의 `repaired:true`, `audit.H31.allowInvalid:true`, `audit.H110.allowInvalid:true`, `acceptedCodes`(01~08)를 확인합니다. 이 작업은 **기존 H열 값은 변경하지 않습니다.**
+4. 기존 웹앱은 **배포 > 배포 관리 > 현재 배포 수정(연필) > 새 버전 > 배포**합니다. **새 배포를 만들면 /exec URL이 달라질 수 있습니다.**
+5. `/exec?type=health`를 열어 `version:` 값이 `20261008-reason-validation-heal-v2`인지 확인합니다.
+6. 마스터 대시보드를 새로고침하고 공용키를 입력해 **H열 규칙 복구**를 클릭합니다. `H열 규칙 점검·복구 완료 ✓`가 보여야 저장할 수 있습니다.
+
+### 이후 안전장치
+- 최신 GAS는 실제 변경된 원인코드 셀만 H열에 쓰며, H31·H110 규칙이 다시 엄격해지면 해당 쓰기 직전에 복구합니다.
+- 원인코드 이외의 필드 편집/월별 Risk 목록 저장은 H열을 다시 쓰지 않습니다.
+- 원인코드는 서버에서 01~08로 검증합니다. 시트의 드롭다운은 유지하면서 **과거 입력값이 규칙에 없어도 차단하지 않는 경고형**으로 전환됩니다.
+- 서버 버전 불일치, 오류, 복구 검증 실패 시 성공으로 표시하지 않습니다. 로컬 미전송 수정값은 보존합니다.
+- UI와 테스트만 변경된 상태는 **운영 Google Sheet 복구 완료가 아닙니다.** 반드시 위 1~6단계를 실행해야 합니다.
+
+검증 명령: `node tests/harness.mjs`
