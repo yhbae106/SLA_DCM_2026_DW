@@ -10,7 +10,7 @@ const REASON_HASH_KEY='dcm-action-sync-reason-hash';
 const RISK_HASH_KEY='dcm-action-sync-risk-hash';
 const REASON_SCHEMA_KEY='dcm-action-reason-schema-v2';
 const originalSetItem=Storage.prototype.setItem;
-let suppressSync=false,pollTimer=null,snapshotTimer=null,lastMeta=null,lastPullAt=0,lastEditAt=0;
+let suppressSync=false,pollTimer=null,snapshotTimer=null,lastMeta=null,lastPullAt=0,lastEditAt=0,syncBroken=false;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>'\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]));
 function endpoint(){return String(CFG.endpoint||'').trim();}
@@ -45,7 +45,7 @@ function installUI(){
  head.appendChild(wrap);
  $('ctSyncEditor')?.addEventListener('change',e=>localStorage.setItem(EDITOR_KEY,e.target.value));
  $('ctSyncKey')?.addEventListener('change',e=>localStorage.setItem(TOKEN_KEY,e.target.value.trim()));
- $('ctSyncConnect')?.addEventListener('click',async()=>{localStorage.setItem(TOKEN_KEY,$('ctSyncKey')?.value.trim()||'');await pullRemote(true);scheduleRiskSnapshot(250,true);});
+ $('ctSyncConnect')?.addEventListener('click',async()=>{syncBroken=false;localStorage.setItem(TOKEN_KEY,$('ctSyncKey')?.value.trim()||'');const ok=await pullRemote(true);if(ok)scheduleRiskSnapshot(250,true);});
 }
 function syncReasonOptions(){
  document.querySelectorAll('#ctActionBody select[data-field="reasonCode"],#ctActionBody select[data-allx-field="reasonCode"]').forEach(sel=>{
@@ -86,8 +86,15 @@ function enrichActions(actions){
 }
 async function post(payload){
  if(!endpoint()||!token())throw new Error(!endpoint()?'Apps Script URL 미설정':'공유키를 입력해 주세요');
- const res=await fetch(endpoint(),{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...payload,token:token()})});
- if(!res.ok)throw new Error(`HTTP ${res.status}`);const json=await res.json();if(!json.ok)throw new Error(json.error||'Sync 실패');return json;
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),18000);
+ try{
+   const res=await fetch(endpoint(),{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...payload,token:token()}),signal:controller.signal});
+   if(!res.ok){const error=new Error(res.status===404?'HTTP 404 · Google Apps Script 배포 URL이 유효하지 않습니다':'HTTP '+res.status);error.status=res.status;throw error;}
+   let json;try{json=await res.json();}catch(_){throw new Error('Apps Script에서 JSON 응답을 받지 못했습니다. 배포를 확인하세요.');}
+   if(!json.ok)throw new Error(json.error||'Sync 실패');
+   return json;
+ }catch(e){if(e.name==='AbortError')throw new Error('Apps Script 응답시간 초과 (18초)');throw e;}
+ finally{clearTimeout(timer);}
 }
 async function syncReasonsIfNeeded(force=false){
  if(!endpoint()||!token())return;
@@ -101,7 +108,7 @@ async function pushChanged(actions){
 }
 function riskSignature(snapshot){return hash((snapshot||[]).map(a=>[a.key,a.priority,a.businessName,a.outlet,a.manager,a.aging]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))));}
 async function pushRiskSnapshot(force=false){
- if(!endpoint()||!token())return;
+ if(!endpoint()||!token()||syncBroken)return;
  const snapshot=allRiskRows();if(!snapshot.length)return;
  const sig=riskSignature(snapshot);if(!force&&sessionStorage.getItem(RISK_HASH_KEY)===sig)return;
  try{
@@ -116,11 +123,10 @@ function scheduleRiskSnapshot(delay=900,force=false){if(snapshotTimer)clearTimeo
 function isEditing(){return !!document.activeElement?.closest?.('#ctActionBody')||Date.now()-lastEditAt<8000;}
 async function pullRemote(force=false){
  try{
-   installUI();if(!endpoint()){setStatus('Apps Script URL 대기','error');return;}if(!token()){setStatus('공유키 입력 필요','idle');return;}
-   if(!force&&(document.visibilityState!=='visible'||isEditing()))return;
+   installUI();if(!endpoint()){setStatus('Apps Script URL 대기','error');return false;}if(!token()){setStatus('공유키 입력 필요','idle');return false;}
+   if(!force&&(syncBroken||document.visibilityState!=='visible'||isEditing()))return false;
    setStatus('동기화 확인 중…','working');
-   const url=new URL(endpoint());url.searchParams.set('token',token());url.searchParams.set('type','load');
-   const res=await fetch(url.toString(),{cache:'no-store'});if(!res.ok)throw new Error(`HTTP ${res.status}`);const json=await res.json();if(!json.ok)throw new Error(json.error||'불러오기 실패');
+   const json=await post({type:'load'});
    lastPullAt=Date.now();
    if(json.reasons&&typeof json.reasons==='object'&&!Array.isArray(json.reasons)){
      // Keep known codes if a stale Apps Script deployment returns an incomplete Config list.
@@ -140,8 +146,13 @@ async function pullRemote(force=false){
      window.dispatchEvent(new CustomEvent('dcm-action-sync-applied',{detail:{actions:remote}}));
      setStatus('공용 데이터 반영 ✓','ok',meta);
    }else setStatus('동기화됨 ✓','ok',meta);
-   syncReasonOptions();
- }catch(e){console.warn('[DCM Action Sync] pull failed',e);setStatus('공용 Sync 실패','error',e.message);}
+   syncReasonOptions();syncBroken=false;return true;
+ }catch(e){
+   console.warn('[DCM Action Sync] pull failed',e);
+   if(e.status===404)syncBroken=true;
+   setStatus(e.status===404?'공용 Sync 실패 · 앱스크립트 배포 주소 확인 필요':'공용 Sync 실패','error',e.message);
+   return false;
+ }
 }
 Storage.prototype.setItem=function(k,v){
  if(this!==localStorage||k!==ACTION_KEY||suppressSync){originalSetItem.call(this,k,v);return;}
@@ -164,7 +175,7 @@ function start(){
  // Preserve historic user-selected reason codes; remapping is not safe without server mapping.
  installUI();observeBoard();
  // Google Sheets Config is the source of truth; never overwrite it from the browser.
- pullRemote(false).then(()=>scheduleRiskSnapshot(1400,false));
+ pullRemote(false).then(ok=>{if(ok)scheduleRiskSnapshot(1400,false);});
  if(pollTimer)clearInterval(pollTimer);const poll=Math.max(30000,Number(CFG.pollMs)||30000);pollTimer=setInterval(()=>pullRemote(false),poll);
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastPullAt>poll)pullRemote(false);});
 }
