@@ -11,8 +11,9 @@ const RISK_HASH_KEY='dcm-action-sync-risk-hash';
 const REASON_SCHEMA_KEY='dcm-action-reason-schema-v2';
 const REQUIRED_API_VERSION='20261008-reason-validation-heal-v2';
 const REPAIR_SESSION_KEY='dcm-action-validation-repaired-v2';
+const PENDING_KEY='dcm-action-master-pending-v1';
 const originalSetItem=Storage.prototype.setItem;
-let suppressSync=false,pollTimer=null,snapshotTimer=null,lastMeta=null,lastPullAt=0,lastEditAt=0,syncBroken=false,serverReady=false,repairing=false;
+let suppressSync=false,pollTimer=null,snapshotTimer=null,lastMeta=null,lastPullAt=0,lastEditAt=0,syncBroken=false,serverReady=false,repairing=false,flushingPending=false;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>'\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]));
 function endpoint(){return String(CFG.endpoint||'').trim();}
@@ -110,11 +111,74 @@ async function syncReasonsIfNeeded(force=false){
  const reasonHash=hash(REASONS);if(!force&&sessionStorage.getItem(REASON_HASH_KEY)===reasonHash)return;
  await post({type:'syncReasons',editor:editor(),reasons:REASONS});sessionStorage.setItem(REASON_HASH_KEY,reasonHash);
 }
+
+function pendingEdits(){
+ try{const x=JSON.parse(localStorage.getItem(PENDING_KEY)||'[]');return Array.isArray(x)?x:[];}catch(e){return [];}
+}
+function stagePendingEdits(changes){
+ const map=new Map(pendingEdits().filter(a=>a&&a.key).map(a=>[a.key,a]));
+ (changes||[]).forEach(a=>{
+   if(!a||!a.key)return;
+   const old=map.get(a.key)||{key:a.key,changedFields:[]};
+   ['outlet','businessNo','priority','businessName','manager','aging'].forEach(f=>{
+     if(a[f]!==undefined)old[f]=a[f];
+   });
+   const fields=Array.isArray(a.changedFields)?a.changedFields:
+     ['reasonCode','plan','dueDate','status'].filter(f=>Object.prototype.hasOwnProperty.call(a,f));
+   fields.forEach(f=>{
+     if(!['reasonCode','plan','dueDate','status'].includes(f))return;
+     old[f]=String(a[f]??'');
+     if(!old.changedFields.includes(f))old.changedFields.push(f);
+   });
+   if(old.changedFields.length)map.set(a.key,old);
+ });
+ originalSetItem.call(localStorage,PENDING_KEY,JSON.stringify([...map.values()]));
+}
+function acknowledgePendingEdits(sent){
+ const map=new Map(pendingEdits().filter(a=>a?.key).map(a=>[a.key,a]));
+ sent.forEach(a=>{
+   const current=map.get(a.key);
+   if(!current)return;
+   (a.changedFields||[]).forEach(f=>{
+     if(String(current[f]??'')===String(a[f]??'')){
+       current.changedFields=current.changedFields.filter(x=>x!==f);
+       delete current[f];
+     }
+   });
+   if(!current.changedFields.length)map.delete(a.key);
+ });
+ originalSetItem.call(localStorage,PENDING_KEY,JSON.stringify([...map.values()]));
+}
+async function flushPendingEdits(){
+ if(flushingPending||!serverReady)return false;
+ const items=pendingEdits();
+ if(!items.length)return true;
+ flushingPending=true;
+ try{
+   setStatus('저장 대기 '+items.length+'건 전송 중…','working');
+   const enriched=enrichActions(items);
+   const json=await post({type:'save',mode:'edit',editor:editor(),actions:enriched});
+   acknowledgePendingEdits(items);
+   setStatus('저장됨 ✓','ok',json.updatedAt?
+     '마지막 수정: '+(json.updatedBy||editor())+' · '+new Date(json.updatedAt).toLocaleString('ko-KR'):'변경사항 저장 완료');
+   return true;
+ }catch(e){
+   console.warn('[DCM Action Sync] pending save failed',e);
+   setStatus('로컬 임시보관 · 공용 Sync 실패','error',e.message);
+   return false;
+ }finally{flushingPending=false;}
+}
 async function pushChanged(actions){
  if(!actions?.length)return;
- try{setStatus('저장 중…','working');const enriched=enrichActions(actions);const json=await post({type:'save',mode:'edit',editor:editor(),actions:enriched});const meta=json.updatedAt?`마지막 수정: ${json.updatedBy||editor()} · ${new Date(json.updatedAt).toLocaleString('ko-KR')}`:'저장됨';setStatus('저장됨 ✓','ok',meta);}
- catch(e){console.warn('[DCM Action Sync] push failed',e);setStatus('로컬 저장됨 · 공용 Sync 실패','error',e.message);}
+ stagePendingEdits(actions);
+ if(!serverReady){
+   setStatus('로컬 임시보관 · 서버 버전 및 H열 규칙 확인 필요','error',
+     '최신 Apps Script 배포를 확인하면 미전송 변경사항을 다시 저장합니다.');
+   return;
+ }
+ await flushPendingEdits();
 }
+
 function riskSignature(snapshot){return hash((snapshot||[]).map(a=>[a.key,a.priority,a.businessName,a.outlet,a.manager,a.aging]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))));}
 async function pushRiskSnapshot(force=false){
  if(!endpoint()||!token()||syncBroken)return;
@@ -135,7 +199,7 @@ async function pullRemote(force=false,forceRepair=false){
    installUI();if(!endpoint()){setStatus('Apps Script URL 대기','error');return false;}if(!token()){setStatus('공유키 입력 필요','idle');return false;}
    if(!force&&(syncBroken||document.visibilityState!=='visible'||isEditing()))return false;
    setStatus('동기화 확인 중…','working');
-   const json=await post({type:'load'});
+   let json=await post({type:'load'});
    if(json.version!==REQUIRED_API_VERSION){
      serverReady=false;syncBroken=true;
      setStatus('서버 구버전 · 저장 차단','error',
@@ -153,6 +217,11 @@ async function pullRemote(force=false,forceRepair=false){
      } finally {repairing=false;}
    }
    serverReady=true;syncBroken=false;
+   if(pendingEdits().length){
+     const saved=await flushPendingEdits();
+     if(!saved)return false; // Never overwrite locally changed fields with an older server snapshot.
+     json=await post({type:'load'});
+   }
    lastPullAt=Date.now();
    if(json.reasons&&typeof json.reasons==='object'&&!Array.isArray(json.reasons)){
      // Keep known codes if a stale Apps Script deployment returns an incomplete Config list.
@@ -207,5 +276,5 @@ function start(){
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastPullAt>poll)pullRemote(false);});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(start,100),{once:true});else setTimeout(start,100);
-window.DCMActionSync={pull:()=>pullRemote(true),repair:()=>pullRemote(true,true),push:()=>pushChanged(getLocalActions()),pushRisk:()=>pushRiskSnapshot(true),allRisk:()=>allRiskRows(),reasons:REASONS};
+window.DCMActionSync={pull:()=>pullRemote(true),repair:()=>pullRemote(true,true),push:()=>flushPendingEdits(),pushRisk:()=>pushRiskSnapshot(true),allRisk:()=>allRiskRows(),reasons:REASONS};
 })();
