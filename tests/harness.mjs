@@ -71,4 +71,14 @@ if(!gas.includes("type === 'dashboard') throw"))fail('Public Dashboard GET unexp
 if(!gas.includes('fixDaejeonManagersInSheets'))fail('Owner-run historical repair utility missing');
 ok('Apps Script dual-source auth, H validation repair and historical manager repair');
 await import('./gas-regression.mjs');
+
+const liveSync=read('action-sync.js');
+if(!liveSync.includes("post({type:'load'})"))fail('Action read must use authenticated POST load');
+if(liveSync.includes("url.searchParams.set('token'"))fail('Secret must not be sent in GET URL');
+if(!liveSync.includes('syncBroken=true'))fail('HTTP404 retry circuit breaker missing');
+const liveAPI=read('apps-script/Code.gs');
+if(!liveAPI.includes("body.type === 'partnerLogin'")||!liveAPI.includes("body.type === 'partnerSaveActions'"))fail('Fast login or batch saving endpoint missing');
+if(!liveAPI.includes("type === 'health'"))fail('Public endpoint health probe missing');
+if(!liveAPI.includes("loadPartnerDashboardData_(partner)"))fail('Partner dataset fetch route missing');
+ok('POST Action sync, 404 recovery and fast/batch API contracts');
 console.log('HARNESS_OK');
