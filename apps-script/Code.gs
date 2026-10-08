@@ -7,6 +7,11 @@ const DCM_DATA_META_SHEET = 'Dashboard Meta';
 const DCM_PARTNERS = ['백제약품','인천약품','복산나이스','아이팜코리아','유진약품'];
 const DCM_PARTNER_ACTION_HEADERS = ['업체 원인','업체 조치계획','업체 Due','업체 상태','업체 수정자','업체 수정시간','업체 수정필드'];
 const DCM_PARTNER_ACTION_FIELDS = ['reasonCode','plan','dueDate','status'];
+const DCM_REASON_DEFAULTS = {
+  '01':'ERP/시스템 미구축','02':'도입 품목 미연동','03':'전산/데이터 오류',
+  '04':'거래처 연동 거부/미협조','05':'공급·거래 중단 예정',
+  '06':'신규 거래처 연동 예정','07':'당월 매출 미발생','08':'도매몰 연동 필요'
+};
 
 function doGet(e) {
   try {
@@ -101,11 +106,7 @@ function setupDcmActionSync() {
     hist.getRange(1,1,1,11).setValues([['eventId','key','업체/권역','사업자번호','실사업자명','담당자','변경필드','이전값','변경값','수정자','수정시간']]);
   }
   ensureDashboardSheets_();
-  if (!Object.keys(loadReasons_()).length) syncReasons_({
-    '01':'ERP/시스템 미구축','02':'도입 품목 미연동','03':'전산/데이터 오류','04':'거래처 연동 거부/미협조',
-    '05':'공급·거래 중단 예정','06':'신규 거래처 연동 예정','07':'당월 매출 미발생'
-  });
-  else refreshReasonValidation_();
+  refreshReasonValidation_();
   ensurePartnerActionColumns_(ss.getSheetByName(DCM_SHEET));
 }
 
@@ -351,126 +352,136 @@ function loadActions_(includeHistory) {
 }
 
 function saveActions_(actions, editor, mode) {
-  const ss = SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
-  const sh = ss.getSheetByName(DCM_SHEET);
-  const last = sh.getLastRow();
-  const existing = last >= 2 ? sh.getRange(2,1,last-1,13).getDisplayValues() : [];
-  const rowByKey = new Map();
-  existing.forEach((r,i) => { if (r[0]) rowByKey.set(r[0], {row:i+2, values:r}); });
-  // Risk snapshots are metadata-only. Never rewrite H:M or user-entered action fields.
-  // Writing the entire A:M range used to trigger H-cell validation failures on legacy labels.
-  if (mode === 'snapshot') {
-    let changedRows = 0;
-    actions.forEach(a => {
-      if (!a || !a.key) return;
-      const found = rowByKey.get(a.key);
-      const parts = String(a.key).split('|||');
-      const fixed = [a.key, a.businessNo || (found ? found.values[1] : '') || parts[1] || '',
-        a.priority || (found ? found.values[2] : '') || '',
-        a.businessName || (found ? found.values[3] : '') || '',
-        a.outlet || (found ? found.values[4] : '') || parts[0] || '',
-        canonicalManager_(a.outlet || (found ? found.values[4] : '') || parts[0] || '', a.manager || (found ? found.values[5] : '') || ''),
-        a.aging || (found ? found.values[6] : '') || ''];
-      if (found) {
-        if (fixed.some((v,i) => String(v) !== String(found.values[i] || ''))) {
-          sh.getRange(found.row,1,1,7).setValues([fixed]);
-          changedRows++;
-        }
-      } else {
-        const next = fixed.concat(Array(6).fill(''));
-        sh.getRange(sh.getLastRow()+1,1,1,13).setValues([next]);
-        rowByKey.set(a.key,{row:sh.getLastRow(),values:next});
-        changedRows++;
-      }
-    });
-    return {updatedBy:'',updatedAt:'',changedRows:changedRows};
-  }
-  // Allow old reason labels to remain in existing rows, even after Config changes.
-  // Data validation should assist data entry, not invalidate historical edits.
-  refreshReasonValidation_();
-  const nowIso = Utilities.formatDate(new Date(), 'Asia/Seoul', "yyyy-MM-dd'T'HH:mm:ssXXX");
-  const historyRows = [];
-  let changedRows = 0;
-  let latestBy = '';
-  let latestAt = '';
-  actions.forEach(a => {
-    if (!a || !a.key) return;
-    const found = rowByKey.get(a.key);
-    const prev = found ? found.values : Array(13).fill('');
-    const outlet = a.outlet || prev[4] || String(a.key).split('|||')[0] || '';
-    const businessNo = a.businessNo || prev[1] || String(a.key).split('|||')[1] || '';
-    const fixed = [a.key,businessNo,a.priority || prev[2] || '',a.businessName || prev[3] || '',outlet,canonicalManager_(outlet,a.manager || prev[5] || ''),a.aging || prev[6] || ''];
-    const editable = [reasonText_(a.reasonCode),a.plan || '',a.dueDate || '',statusLabel_(a.status)];
-    const fixedChanged = !found || fixed.some((v,i)=>String(prev[i]||'')!==String(v||''));
-    const editableIndexes = [7,8,9,10];
-    const editableChanged = found && editableIndexes.some((idx,i)=>String(prev[idx]||'')!==String(editable[i]||''));
-    const hasUserContent = !!(a.reasonCode || a.plan || a.dueDate || (a.status && a.status !== 'TODO'));
-    const stampEdit = editableChanged || (!found && hasUserContent && mode !== 'snapshot');
-    const nextEditor = stampEdit ? (editor || a.modifiedBy || prev[11] || '') : (prev[11] || '');
-    const nextTime = stampEdit ? nowIso : (prev[12] || '');
-    const next = [...fixed, ...editable, nextEditor, nextTime];
-    if (editableChanged) {
-      editableIndexes.forEach((idx,i) => {
-        if (String(prev[idx] || '') !== String(editable[i] || '')) historyRows.push([Utilities.getUuid(),a.key,outlet,businessNo,next[3] || '',next[5] || '',['원인','조치계획','Due','상태'][i],prev[idx] || '',editable[i] || '',editor || a.modifiedBy || '',nowIso]);
-      });
+  const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID),sh=ss.getSheetByName(DCM_SHEET);
+  if(!sh)throw new Error('Action Board 시트가 없습니다.');
+  const last=sh.getLastRow(),prior=last>=2?sh.getRange(2,1,last-1,13).getDisplayValues():[];
+  const rowByKey=new Map();
+  prior.forEach((r,i)=>{if(r[0])rowByKey.set(r[0],{row:i+2,values:r});});
+  const isSnapshot=mode==='snapshot';
+  const reasons=isSnapshot?null:loadReasons_();
+  const nowIso=Utilities.formatDate(new Date(),'Asia/Seoul',"yyyy-MM-dd'T'HH:mm:ssXXX");
+  const historyRows=[];
+  let changedRows=0,latestAt='',latestBy='',reasonRuleReady=false;
+  (actions||[]).forEach(function(a){
+    if(!a||!a.key)return;
+    const found=rowByKey.get(a.key),parts=String(a.key).split('|||'),prev=found?found.values:Array(13).fill('');
+    const outlet=String(a.outlet||prev[4]||parts[0]||''),businessNo=String(a.businessNo||prev[1]||parts[1]||'');
+    const fixed=[a.key,businessNo,a.priority||prev[2]||'',a.businessName||prev[3]||'',
+      outlet,canonicalManager_(outlet,a.manager||prev[5]||''),a.aging||prev[6]||''];
+    let row=found?found.row:sh.getLastRow()+1;
+    let changed=!found;
+    // The H:K columns belong to master Action content. Never rewrite H when only I/K/A:G changed.
+    if(!found){
+      sh.getRange(row,1,1,7).setValues([fixed]);
+      rowByKey.set(a.key,{row:row,values:fixed.concat(Array(6).fill(''))});
+    }else if(fixed.some((v,i)=>String(v||'')!==String(prev[i]||''))){
+      sh.getRange(row,1,1,7).setValues([fixed]);
+      changed=true;
     }
-    const rowChanged = !found || fixedChanged || editableChanged;
-    if (!rowChanged) return;
-    changedRows++;
-    if (stampEdit) { latestBy = nextEditor; latestAt = nextTime; }
-    if (found) sh.getRange(found.row,1,1,13).setValues([next]);
-    else { sh.appendRow(next); rowByKey.set(a.key,{row:sh.getLastRow(),values:next}); }
+    if(isSnapshot){if(changed)changedRows++;return;}
+    const hasFieldList=Array.isArray(a.changedFields);
+    const editableFields=hasFieldList
+      ?DCM_PARTNER_ACTION_FIELDS.filter(f=>a.changedFields.includes(f))
+      :DCM_PARTNER_ACTION_FIELDS.filter(f=>Object.prototype.hasOwnProperty.call(a,f));
+    const selected={reasonCode:a.reasonCode,plan:a.plan,dueDate:a.dueDate,status:a.status};
+    const idxByField={reasonCode:7,plan:8,dueDate:9,status:10};
+    let edited=false;
+    editableFields.forEach(function(field){
+      const idx=idxByField[field],old=String(prev[idx]||''),raw=selected[field]==null?'':String(selected[field]);
+      let value='';
+      if(field==='reasonCode'){
+        // Never rewrite a historical H cell solely because a label changed in Config.
+        const oldCode=reasonCode_(old,reasons);
+        if(!hasFieldList && raw==='' && old) return; // Guard older browsers with stale cached selections.
+        if(raw && !Object.prototype.hasOwnProperty.call(reasons,raw))throw new Error('원인코드 '+raw+'가 Config에 등록되지 않았습니다.');
+        if(oldCode===raw && (old||raw===''))return;
+        value=raw?reasonText_(raw,reasons):'';
+        if(!reasonRuleReady){refreshReasonValidation_();reasonRuleReady=true;}
+      }else if(field==='status'){
+        if(raw && !['TODO','IN_PROGRESS','WAITING','DONE'].includes(raw))throw new Error('유효하지 않은 Action 상태입니다.');
+        value=statusLabel_(raw||'TODO');
+        if(!old && !hasFieldList && raw==='TODO')return;
+      }else if(field==='dueDate'){
+        if(raw && !/^\d{4}-\d{2}-\d{2}$/.test(raw))throw new Error('Due 입력형식은 YYYY-MM-DD이어야 합니다.');
+        value=raw;
+      }else {
+        if(raw.length>3000)throw new Error('조치계획은 최대 3000자입니다.');
+        value=safeSheetText_(raw);
+      }
+      if(old===value)return;
+      // Only the changed cell: prevents legacy invalid H31/H110 from aborting an unrelated edit.
+      sh.getRange(row,idx+1).setValue(value);
+      historyRows.push([Utilities.getUuid(),a.key,outlet,businessNo,fixed[3],fixed[5],
+        ({reasonCode:'원인',plan:'조치계획',dueDate:'Due',status:'상태'})[field],old,value,editor||a.modifiedBy||'',nowIso]);
+      edited=true;changed=true;
+    });
+    if(edited){
+      const nextEditor=String(editor||a.modifiedBy||prev[11]||'');
+      sh.getRange(row,12,1,2).setValues([[nextEditor,nowIso]]);
+      latestAt=nowIso;latestBy=nextEditor;
+    }
+    if(changed)changedRows++;
   });
-  if (historyRows.length) {
-    let hist = ss.getSheetByName(DCM_HISTORY_SHEET);
-    if (!hist) { setupDcmActionSync(); hist = ss.getSheetByName(DCM_HISTORY_SHEET); }
+  if(historyRows.length){
+    let hist=ss.getSheetByName(DCM_HISTORY_SHEET);
+    if(!hist){setupDcmActionSync();hist=ss.getSheetByName(DCM_HISTORY_SHEET);}
     hist.getRange(hist.getLastRow()+1,1,historyRows.length,11).setValues(historyRows);
   }
-  return {updatedBy:latestBy, updatedAt:latestAt, changedRows:changedRows};
+  return {updatedAt:latestAt,updatedBy:latestBy,changedRows:changedRows};
 }
 
 function syncReasons_(reasons) {
-  const ss = SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
-  const sh = ss.getSheetByName(DCM_SHEET);
-  let cfg = ss.getSheetByName(DCM_CONFIG_SHEET);
-  if (!cfg) { cfg = ss.insertSheet(DCM_CONFIG_SHEET); cfg.hideSheet(); }
-  const entries = Object.keys(reasons).sort().map(k => [k, reasons[k]]);
-  const current = cfg.getLastRow() >= 2 ? cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues() : [];
-  if (JSON.stringify(current) !== JSON.stringify(entries)) {
-    cfg.clearContents(); cfg.getRange(1,1,1,2).setValues([['code','label']]); if (entries.length) cfg.getRange(2,1,entries.length,2).setValues(entries);
-  }
-  const labels = entries.map(x => `${x[0]} ${x[1]}`);
-  if (labels.length) sh.getRange('H2:H1000').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(labels, true).setAllowInvalid(true).build());
+  const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
+  let cfg=ss.getSheetByName(DCM_CONFIG_SHEET);
+  if(!cfg){cfg=ss.insertSheet(DCM_CONFIG_SHEET);cfg.hideSheet();}
+  const existing=cfg.getLastRow()>=2?cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues():[];
+  const current=new Map(existing.map(r=>[String(r[0]||'').trim(),String(r[1]||'').trim()]));
+  if(cfg.getLastRow()<1)cfg.getRange(1,1,1,2).setValues([['code','label']]);
+  const incoming={...DCM_REASON_DEFAULTS,...(reasons||{})};
+  const add=Object.entries(incoming).filter(([code,label])=>/^\d{2}$/.test(code)&&String(label||'').trim()&&!current.has(code));
+  if(add.length)cfg.getRange(cfg.getLastRow()+1,1,add.length,2).setValues(add);
+  refreshReasonValidation_();
 }
-
 function loadReasons_() {
-  const sh=SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_CONFIG_SHEET);
-  const reasons={};
-  if (!sh||sh.getLastRow()<2) return reasons;
-  sh.getRange(2,1,sh.getLastRow()-1,2).getDisplayValues().forEach(row=>{
-    const code=String(row[0]||'').trim(),label=String(row[1]||'').trim();
-    if(code&&label&&!Object.prototype.hasOwnProperty.call(reasons,code))reasons[code]=label;
+  // Include the default vocabulary even if an older Config tab only holds codes 01–07.
+  const dictionary={...DCM_REASON_DEFAULTS},cfg=SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_CONFIG_SHEET);
+  if(cfg&&cfg.getLastRow()>=2)cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues().forEach(r=>{
+    const code=String(r[0]||'').trim(),label=String(r[1]||'').trim();
+    if(/^\d{2}$/.test(code)&&label)dictionary[code]=label;
   });
-  return reasons;
+  return dictionary;
 }
 function refreshReasonValidation_() {
-  const sh=SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_SHEET);
+  const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID),sh=ss.getSheetByName(DCM_SHEET);
   if(!sh)return;
-  const reasons=loadReasons_(),labels=Object.keys(reasons).map(k=>k+' '+reasons[k]);
-  const range=sh.getRange('H2:H1000');
-  if(labels.length)range.setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(labels,true).setAllowInvalid(false).build());
-  else range.clearDataValidations();
+  const dict=loadReasons_(),cfg=ss.getSheetByName(DCM_CONFIG_SHEET);
+  // Add only missing codes; do not replace user-customized Config labels.
+  if(cfg){
+    const existing=cfg.getLastRow()>=2?cfg.getRange(2,1,cfg.getLastRow()-1,1).getDisplayValues().map(r=>String(r[0]).trim()):[];
+    const missing=Object.entries(dict).filter(([c])=>!existing.includes(c));
+    if(missing.length)cfg.getRange(cfg.getLastRow()+1,1,missing.length,2).setValues(missing);
+  }
+  const labels=Object.entries(dict).map(([c,t])=>c+' '+t);
+  // Warning-only validation permits historical labels in H31/H110; the API still validates new values.
+  const rule=SpreadsheetApp.newDataValidation().requireValueInList(labels,true).setAllowInvalid(true).build();
+  const last=Math.max(sh.getLastRow(),1000);
+  sh.getRange(2,8,last-1,1).setDataValidation(rule);
+}
+function repairActionReasonValidation() {
+  refreshReasonValidation_();
+  return '원인코드 01~08 및 기존 값 수용 규칙 복구 완료';
 }
 function reasonCode_(text, cachedReasons) {
   const str=String(text||'').trim(),reasons=cachedReasons||loadReasons_();
   return Object.keys(reasons).sort((a,b)=>b.length-a.length).find(k=>str===k||str.startsWith(k+' '))||'';
 }
-function reasonText_(code) {
-  const cfg = SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_CONFIG_SHEET);
-  if (!code || !cfg || cfg.getLastRow() < 2) return '';
-  const vals = cfg.getRange(2,1,cfg.getLastRow()-1,2).getDisplayValues();
-  const row = vals.find(r => r[0] === String(code)); return row ? `${row[0]} ${row[1]}` : String(code);
+function reasonText_(code, cachedReasons) {
+  if(!code)return '';
+  const reasons=cachedReasons||loadReasons_();
+  return Object.prototype.hasOwnProperty.call(reasons,code)?code+' '+reasons[code]:String(code);
 }
+
+
 function statusLabel_(s) { return ({TODO:'미조치',IN_PROGRESS:'진행중',WAITING:'업체회신',DONE:'완료'})[s] || (s || '미조치'); }
 function statusCode_(s) { return ({'미조치':'TODO','진행중':'IN_PROGRESS','업체회신':'WAITING','완료':'DONE'})[s] || (s || 'TODO'); }
 function normalizeDate_(s) { const m=String(s||'').match(/\d{4}-\d{2}-\d{2}/); return m?m[0]:String(s||''); }
