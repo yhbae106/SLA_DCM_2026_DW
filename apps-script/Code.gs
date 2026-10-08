@@ -56,7 +56,7 @@ function doPost(e) {
       return json_({ok:true, ...result});
     }
     assertToken_(body.token);
-    if (body.type === 'load') return json_({ok:true, ...loadActions_(), reasons:loadReasons_(),version:DCM_SYNC_API_VERSION});
+    if (body.type === 'load') return json_({ok:true, ...loadActions_(false), reasons:loadReasons_(),version:DCM_SYNC_API_VERSION});
     if (body.type === 'syncReasons') {
       refreshReasonValidation_();
       return json_({ok:true, reasons:loadReasons_()});
@@ -158,12 +158,29 @@ function canonicalManager_(outlet, manager) {return String(outlet || '').trim() 
 function loadPartnerDashboardData_(partner) {
   // Login/dashboard must not wait for the much heavier Action Board sheet and History.
   const cache = typeof CacheService === 'undefined' ? null : CacheService.getScriptCache();
-  const cacheKey='partnerData-v3-'+partner;
-  if(cache){const saved=cache.get(cacheKey);if(saved){try{return JSON.parse(saved);}catch(ignore){}}}
+  const cacheKey='partnerData-v4-'+partner;
+  if(cache){
+    const meta=cache.get(cacheKey);
+    if(meta)try{
+      const n=Number(meta);
+      if(n>=1&&n<=60){
+        const keys=Array.from({length:n},(_,i)=>cacheKey+'-'+i),pages=cache.getAll(keys);
+        if(keys.every(k=>typeof pages[k]==='string'))return JSON.parse(keys.map(k=>pages[k]).join(''));
+      }
+    }catch(ignore){}
+  }
   const all = loadDashboardData_();
   const filtered = (all.data || []).filter(r => partnerOfOutlet_(r.outlet) === partner);
   const result={data:filtered,updatedAt:all.updatedAt,updatedBy:all.updatedBy,rowCount:filtered.length,version:DCM_SYNC_API_VERSION};
-  if(cache){const encoded=JSON.stringify(result);if(encoded.length<85000)cache.put(cacheKey,encoded,90);}
+  if(cache){
+    const encoded=JSON.stringify(result),chunkSize=60000,count=Math.ceil(encoded.length/chunkSize);
+    if(count>=1&&count<=60){
+      const pages={};
+      for(let i=0;i<count;i++)pages[cacheKey+'-'+i]=encoded.slice(i*chunkSize,(i+1)*chunkSize);
+      cache.putAll(pages,90);
+      cache.put(cacheKey,String(count),90);
+    }
+  }
   return result;
 }
 
@@ -268,7 +285,8 @@ function savePartnerActionsBatch_(partner, incoming) {
   const dict=loadReasons_(),updates=new Map(),fields=DCM_PARTNER_ACTION_FIELDS;
   incoming.forEach(function(item){
     const k=String(item&&item.key||''),parts=k.split('|||'),f=String(item&&item.field||'');
-    const val=String(item&&item.value==null?'':item.value);
+    if(!item||typeof item!=='object')throw new Error('저장 항목 형식이 올바르지 않습니다.');
+    const val=String(item.value==null?'':item.value);
     if(parts.length!==2||!parts[0]||!parts[1]||k.length>240||partnerOfOutlet_(parts[0])!==partner)
       throw new Error('접근할 수 없는 거래처입니다.');
     if(!fields.includes(f))throw new Error('허용되지 않은 수정 필드입니다.');
@@ -392,7 +410,7 @@ function saveDashboardData_(data, editor) {
     meta.getRange(1,1,1,3).setValues([['updatedAt','updatedBy','rowCount']]);
     meta.getRange(2,1,1,3).setValues([[nowIso, String(editor || 'MASTER'), clean.length]]);
     SpreadsheetApp.flush();
-    if(typeof CacheService !== 'undefined'){const cache=CacheService.getScriptCache();DCM_PARTNERS.forEach(p=>cache.remove('partnerData-v3-'+p));}
+    if(typeof CacheService !== 'undefined'){const cache=CacheService.getScriptCache();DCM_PARTNERS.forEach(p=>cache.remove('partnerData-v4-'+p));}
     return {updatedAt:nowIso, updatedBy:String(editor || 'MASTER'), rowCount:clean.length};
   } finally {
     lock.releaseLock();
