@@ -110,7 +110,7 @@ async function pushRiskSnapshot(force=false){
    sessionStorage.setItem(RISK_HASH_KEY,sig);
    const meta=json.updatedAt?`마지막 수정: ${json.updatedBy||'-'} · ${new Date(json.updatedAt).toLocaleString('ko-KR')}`:`Risk ${snapshot.length}건 확인`;
    setStatus(`Risk ${snapshot.length}건 동기화 ✓`,'ok',meta);
- }catch(e){console.warn('[DCM Action Sync] risk snapshot failed',e);setStatus('Risk 목록 Sync 실패','error',e.message);}
+ }catch(e){console.warn('[DCM Action Sync] risk snapshot failed',e);setStatus('Risk 목록 Sync 실패 · Apps Script 재배포 확인','error',e.message);}
 }
 function scheduleRiskSnapshot(delay=900,force=false){if(snapshotTimer)clearTimeout(snapshotTimer);snapshotTimer=setTimeout(()=>pushRiskSnapshot(force),delay);}
 function isEditing(){return !!document.activeElement?.closest?.('#ctActionBody')||Date.now()-lastEditAt<8000;}
@@ -148,7 +148,8 @@ Storage.prototype.setItem=function(k,v){
  }catch(e){}
 };
 function start(){
- migrateLegacyLocalReasons();installUI();observeBoard();
+ // Preserve historic user-selected reason codes; remapping is not safe without server mapping.
+ installUI();observeBoard();
  // Google Sheets Config is the source of truth; never overwrite it from the browser.
  pullRemote(false).then(()=>scheduleRiskSnapshot(1400,false));
  if(pollTimer)clearInterval(pollTimer);const poll=Math.max(180000,Number(CFG.pollMs)||180000);pollTimer=setInterval(()=>pullRemote(false),poll);
