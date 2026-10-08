@@ -48,3 +48,11 @@
 - 변경된 Apps Script `apps-script/Code.gs`는 GitHub 병합만으로 운영 중인 /exec 웹앱에 배포되지 않습니다. Apps Script 편집기에서 기존 웹앱 배포를 새 버전으로 수정해야 공용 Action 조회가 실제로 작동합니다.
 - 시트의 과거 월 실제 담당자 셀 정정은 편집기에서 `fixDaejeonManagersInSheets()` 함수를 한 차례 실행합니다. 화면의 담당자 보정은 웹 코드와 API에서 자동 적용됩니다.
 - 업데이트된 JS·CSS 파일의 쿼리 버전을 바꿔 브라우저 캐시 재사용을 방지합니다.
+
+## 2026-10-08 Action Board 이중 작성 및 H 검증 재발방지
+- **Google Sheet Action Board A:M**: 대웅제약 마스터 작성 데이터. **N:T**: 파트너가 직접 작성한 별도 데이터(원인/계획/Due/상태/작성자/수정시간/수정필드). 양쪽 값을 병합하지 않습니다.
+- Partner 웹의 개별 필드 수정은 로그인 시 부여된 업체 코드로 인증한 Apps Script `partnerSaveAction`을 통해 Google Sheet N:T에 직접 쓰고, 전송 실패 시 브라우저에 임시 보관합니다.
+- 마스터에서는 업체 작성값을 읽기 전용으로 함께 표시하고, 마스터의 기존 필드 편집은 30초 주기로 동기화합니다. 업체 입력은 마스터 A:M을 덮어쓰지 않습니다.
+- **H31/H110 예방:** 마스터 저장은 변경 필드만 쓰며, H열은 원인 변경 시에만 갱신합니다. Config 01~08을 지원하고 과거 값이 새 검증 목록에 없더라도 저장이 중단되지 않도록 경고형 데이터 검증을 설정합니다. `repairActionReasonValidation()` 실행으로 H열 규칙을 직접 복구할 수 있습니다.
+- **필수:** `apps-script/Code.gs`를 사용 중인 Google Apps Script 편집기에 적용한 후 **기존 웹앱을 새 버전으로 배포**해야 서버 읽기/저장 API와 H 규칙 조정이 적용됩니다. GitHub Pages 배포만으로는 GAS 서버가 자동 변경되지 않습니다.
+- 자동 회귀 테스트: `node tests/harness.mjs` — H31/H110, 08코드, 마스터/업체 분리·권한 보호 검증.
