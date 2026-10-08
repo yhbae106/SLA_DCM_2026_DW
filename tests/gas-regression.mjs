@@ -8,6 +8,7 @@ class MockSheet {
   constructor(name,rows=[],columns=20){this.name=name;this.rows=rows.map(r=>[...r]);this.columns=columns;this.rules=new Map();this.writes=[];}
   getLastRow(){return this.rows.length;}
   getMaxColumns(){return this.columns;}
+  getMaxRows(){return 1000;}
   insertColumnsAfter(col,count){this.columns+=count;}
   hideSheet(){}
   clearContents(){this.rows=[];}
@@ -27,6 +28,7 @@ class MockSheet {
     }
     return {
       getDisplayValues(){return Array.from({length:n},(_,i)=>Array.from({length:w},(_,j)=>String(at(start+i,col+j))));},
+      getDataValidation(){return sheet.rules.get(start+':'+col)||null;},
       setValues(vals){if(vals.length!==n)throw new Error('Row count mismatch');vals.forEach((r,i)=>{if(r.length!==w)throw new Error('Width mismatch');r.forEach((x,j)=>store(start+i,col+j,x));});},
       setValue(value){if(n!==1||w!==1)throw new Error('setValue range mismatch');store(start,col,value);},
       clearDataValidations(){for(let i=0;i<n;i++)for(let j=0;j<w;j++)sheet.rules.delete((start+i)+':'+(col+j));},
@@ -52,8 +54,10 @@ const ss={getSheetByName:n=>sheets.get(n)||null,insertSheet:n=>{const x=new Mock
 for(let i=2;i<=140;i++)sheet.rules.set(i+':8',{options:defaults.map(x=>x.join(' ')),allowInvalid:false});
 const context={
   SpreadsheetApp:{openById:()=>ss,newDataValidation:()=>{
-    const object={options:[],allowInvalid:false};
-    return {requireValueInList(x){object.options=x;return this;},setAllowInvalid(v){object.allowInvalid=v;return this;},build(){return {...object}}};
+    const object={options:[],allowInvalid:false,helpText:''};
+    return {requireValueInList(x){object.options=x;return this;},setAllowInvalid(v){object.allowInvalid=v;return this;},
+      setHelpText(t){object.helpText=t;return this;},
+      build(){const snap={...object};return {...snap,getAllowInvalid(){return snap.allowInvalid;},getCriteriaType(){return 'VALUE_IN_LIST';}};}};
   },flush(){}},
   Utilities:{getUuid:()=>String(Math.random()),formatDate:()=>new Date('2026-10-08T10:00:00Z').toISOString(),
     base64EncodeWebSafe:v=>Buffer.from(v).toString('base64url'),Charset:{UTF_8:'utf8'}},
@@ -113,4 +117,20 @@ const loginJson=JSON.parse(call('doPost',{postData:{contents:JSON.stringify({typ
 if(!loginJson.ok||!loginJson.partner||loginJson.data||loginJson.actions)fail('Login unnecessarily waits for data and actions');
 ok('Partner authentication returns lightweight response without Dashboard or Action data');
 context.PropertiesService=previousProps;
+
+const cellValue31=sheet.rows[30][7],cellValue110=sheet.rows[109][7];
+for(const row of [31,110,150])sheet.rules.set(row+':8',{options:defaults.map(x=>x.join(' ')),allowInvalid:false,getAllowInvalid(){return false;}});
+const repaired=call('repairActionReasonValidation');
+if(!repaired.repaired||repaired.audit.H31.allowInvalid!==true||repaired.audit.H110.allowInvalid!==true)
+  fail('repair did not turn H31/H110 into nonblocking dropdowns');
+if(!repaired.acceptedCodes.includes('08')||repaired.changedCellContents!==0)fail('repair did not preserve values/codes');
+if(sheet.rows[30][7]!==cellValue31||sheet.rows[109][7]!==cellValue110)
+  fail('repair changed existing H values');
+if(!sheet.rules.get('150:8')?.getAllowInvalid())fail('future row H150 still has strict rule');
+ok('owner repair restores every H dropdown, including future rows, without editing values');
+sheet.rules.set('31:8',{options:defaults.map(x=>x.join(' ')),allowInvalid:false,getAllowInvalid(){return false;}});
+call('saveActions_',[{key:'백제약품 대전|||31',changedFields:['reasonCode'],reasonCode:'08'}],'정직한','edit');
+if(sheet.rows[30][7]!=='08 도매몰 연동 필요'||!sheet.rules.get('31:8').getAllowInvalid())
+  fail('reason write did not self-heal strict H31');
+ok('reason update detects and self-heals a newly introduced strict H31 rule');
 console.log('GAS_REGRESSION_OK');
