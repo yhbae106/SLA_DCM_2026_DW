@@ -261,7 +261,7 @@ function loadActions_(includeHistory) {
     const updatedAt = r[12] || '';
     if (updatedAt && (!latestAt || updatedAt > latestAt)) { latestAt = updatedAt; latestBy = r[11] || ''; }
     actions.push({
-      key:key, businessNo:r[1] || '', priority:r[2] || '', businessName:r[3] || '', outlet:r[4] || '', manager:r[5] || '', aging:r[6] || '',
+      key:key, businessNo:r[1] || '', priority:r[2] || '', businessName:r[3] || '', outlet:r[4] || '', manager:canonicalManager_(r[4],r[5]), aging:r[6] || '',
       reasonCode:reasonCode_(r[7], reasonDict), plan:r[8] || '', dueDate:normalizeDate_(r[9]), status:statusCode_(r[10]), modifiedBy:r[11] || '', updatedAt:r[12] || '', history:historyMap[key] || []
     });
   });
@@ -287,7 +287,7 @@ function saveActions_(actions, editor, mode) {
         a.priority || (found ? found.values[2] : '') || '',
         a.businessName || (found ? found.values[3] : '') || '',
         a.outlet || (found ? found.values[4] : '') || parts[0] || '',
-        a.manager || (found ? found.values[5] : '') || '',
+        canonicalManager_(a.outlet || (found ? found.values[4] : '') || parts[0] || '', a.manager || (found ? found.values[5] : '') || ''),
         a.aging || (found ? found.values[6] : '') || ''];
       if (found) {
         if (fixed.some((v,i) => String(v) !== String(found.values[i] || ''))) {
@@ -317,7 +317,7 @@ function saveActions_(actions, editor, mode) {
     const prev = found ? found.values : Array(13).fill('');
     const outlet = a.outlet || prev[4] || String(a.key).split('|||')[0] || '';
     const businessNo = a.businessNo || prev[1] || String(a.key).split('|||')[1] || '';
-    const fixed = [a.key,businessNo,a.priority || prev[2] || '',a.businessName || prev[3] || '',outlet,a.manager || prev[5] || '',a.aging || prev[6] || ''];
+    const fixed = [a.key,businessNo,a.priority || prev[2] || '',a.businessName || prev[3] || '',outlet,canonicalManager_(outlet,a.manager || prev[5] || ''),a.aging || prev[6] || ''];
     const editable = [reasonText_(a.reasonCode),a.plan || '',a.dueDate || '',statusLabel_(a.status)];
     const fixedChanged = !found || fixed.some((v,i)=>String(prev[i]||'')!==String(v||''));
     const editableIndexes = [7,8,9,10];
