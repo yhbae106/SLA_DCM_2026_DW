@@ -254,6 +254,37 @@ function saveActions_(actions, editor, mode) {
   const existing = last >= 2 ? sh.getRange(2,1,last-1,13).getDisplayValues() : [];
   const rowByKey = new Map();
   existing.forEach((r,i) => { if (r[0]) rowByKey.set(r[0], {row:i+2, values:r}); });
+  // Risk snapshots are metadata-only. Never rewrite H:M or user-entered action fields.
+  // Writing the entire A:M range used to trigger H-cell validation failures on legacy labels.
+  if (mode === 'snapshot') {
+    let changedRows = 0;
+    actions.forEach(a => {
+      if (!a || !a.key) return;
+      const found = rowByKey.get(a.key);
+      const parts = String(a.key).split('|||');
+      const fixed = [a.key, a.businessNo || (found ? found.values[1] : '') || parts[1] || '',
+        a.priority || (found ? found.values[2] : '') || '',
+        a.businessName || (found ? found.values[3] : '') || '',
+        a.outlet || (found ? found.values[4] : '') || parts[0] || '',
+        a.manager || (found ? found.values[5] : '') || '',
+        a.aging || (found ? found.values[6] : '') || ''];
+      if (found) {
+        if (fixed.some((v,i) => String(v) !== String(found.values[i] || ''))) {
+          sh.getRange(found.row,1,1,7).setValues([fixed]);
+          changedRows++;
+        }
+      } else {
+        const next = fixed.concat(Array(6).fill(''));
+        sh.getRange(sh.getLastRow()+1,1,1,13).setValues([next]);
+        rowByKey.set(a.key,{row:sh.getLastRow(),values:next});
+        changedRows++;
+      }
+    });
+    return {updatedBy:'',updatedAt:'',changedRows:changedRows};
+  }
+  // Allow old reason labels to remain in existing rows, even after Config changes.
+  // Data validation should assist data entry, not invalidate historical edits.
+  refreshReasonValidation_();
   const nowIso = Utilities.formatDate(new Date(), 'Asia/Seoul', "yyyy-MM-dd'T'HH:mm:ssXXX");
   const historyRows = [];
   let changedRows = 0;
@@ -306,7 +337,7 @@ function syncReasons_(reasons) {
     cfg.clearContents(); cfg.getRange(1,1,1,2).setValues([['code','label']]); if (entries.length) cfg.getRange(2,1,entries.length,2).setValues(entries);
   }
   const labels = entries.map(x => `${x[0]} ${x[1]}`);
-  if (labels.length) sh.getRange('H2:H1000').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(labels, true).setAllowInvalid(false).build());
+  if (labels.length) sh.getRange('H2:H1000').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(labels, true).setAllowInvalid(true).build());
 }
 
 function loadReasons_() {
