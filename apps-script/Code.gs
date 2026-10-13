@@ -404,6 +404,11 @@ function saveDashboardData_(data, editor) {
         normalizeOx_(s['대웅제약']), normalizeOx_(s['대웅바이오']), normalizeOx_(s['한올바이오']), nowIso
       ]);
     });
+    // Validate before clearing the sheet: month/outlet/business number is unique.
+    const sourceKeys=new Set(),duplicates=new Set();
+    clean.forEach(r=>{const k=[r[0],r[1],r[3]].join('|||');if(sourceKeys.has(k))duplicates.add(k);else sourceKeys.add(k);});
+    if(duplicates.size)throw new Error('Dashboard Data 중복 '+duplicates.size+
+      '건(월·권역·사업자번호). 원본 유지: '+[...duplicates].slice(0,3).join(', '));
     clean.sort((a,b)=>String(a[0]).localeCompare(String(b[0])) || String(a[1]).localeCompare(String(b[1]),'ko') || String(a[3]).localeCompare(String(b[3])));
     sh.clearContents();
     sh.getRange(1,1,1,9).setValues([['month','outlet','manager','businessNo','businessName','대웅제약','대웅바이오','한올바이오','savedAt']]);
