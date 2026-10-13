@@ -140,4 +140,28 @@ call('saveActions_',[{key:'백제약품 대전|||31',changedFields:['reasonCode'
 if(sheet.rows[30][7]!=='05 도매몰 미연동')fail('Single-cell validation fallback failed');
 if(sheet.rules.get('110:8').getAllowInvalid()!==true)fail('Single-cell repair modified other H rules');
 ok('Saving reason repairs only the affected H31 cell');
+
+const sampleKey='백제약품 대전|||31';
+const copy=[...sheet.rows[30]];
+sheet.rows.push(copy);
+const loadedDedup=call('loadActions_',false);
+if(loadedDedup.actions.filter(a=>a.key===sampleKey).length!==1)fail('Duplicate key emitted more than one Action card');
+if(!loadedDedup.duplicateKeys.includes(sampleKey))fail('Duplicate anomaly not reported');
+ok('Action reads collapse duplicate keys and report anomaly');
+let masterBlocked=false;
+try{call('saveActions_',[{key:sampleKey,changedFields:['plan'],plan:'should not save'}],'정직한','edit');}
+catch(e){masterBlocked=/거래처 키 중복/.test(e.message);}
+if(!masterBlocked)fail('Master write did not block pre-existing duplicate keys');
+let partnerBlocked=false;
+try{call('savePartnerActionsBatch_','백제약품',[{key:sampleKey,field:'plan',value:'should not save'}]);}
+catch(e){partnerBlocked=/거래처 키 중복/.test(e.message);}
+if(!partnerBlocked)fail('Partner batch did not block duplicate key');
+ok('Master and Partner writes reject ambiguous stored keys');
+sheet.rows.pop();
+const beforeUnique=sheet.getLastRow();
+call('saveActions_',[{key:'인천약품|||new-unique',outlet:'인천약품',businessNo:'new-unique',businessName:'New vendor',priority:'P3'},
+                      {key:'인천약품|||new-unique',outlet:'인천약품',businessNo:'new-unique',businessName:'New vendor',priority:'P2'}],
+'정직한','snapshot');
+if(sheet.getLastRow()!==beforeUnique+1)fail('Duplicate items in same snapshot produced multiple rows');
+ok('Incoming duplicate snapshot rows are coalesced to one unique key');
 console.log('GAS_REGRESSION_OK');
