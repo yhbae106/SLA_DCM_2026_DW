@@ -164,4 +164,16 @@ call('saveActions_',[{key:'인천약품|||new-unique',outlet:'인천약품',busi
 '정직한','snapshot');
 if(sheet.getLastRow()!==beforeUnique+1)fail('Duplicate items in same snapshot produced multiple rows');
 ok('Incoming duplicate snapshot rows are coalesced to one unique key');
+const dashboardBefore=JSON.stringify(dashboard.rows);
+let duplicateDashboardBlocked=false;
+try{
+  call('saveDashboardData_',[{
+    month:'2026-09',outlet:'인천약품',businessNo:'8818801139',businessName:'수정약품 DD(강동구)',manager:'배영훈',statuses:{'한올바이오':'O'}
+  },{
+    month:'2026-09',outlet:'인천약품',businessNo:'8818801139',businessName:'수정약품 DD(강동구)',manager:'배영훈',statuses:{'한올바이오':'O'}
+  }],'MASTER');
+}catch(e){duplicateDashboardBlocked=/중복/.test(e.message);}
+if(!duplicateDashboardBlocked||JSON.stringify(dashboard.rows)!==dashboardBefore)
+  fail('Duplicate monthly dashboard upload overwrote existing data');
+ok('Dashboard duplicate-month key rejected before clearing original data');
 console.log('GAS_REGRESSION_OK');
