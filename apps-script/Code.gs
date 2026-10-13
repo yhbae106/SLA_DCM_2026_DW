@@ -248,6 +248,7 @@ function savePartnerAction_(partner, body) {
   ensurePartnerActionColumns_(sh);
   const total=sh.getLastRow();
   const keys=total>=2?sh.getRange(2,1,total-1,1).getDisplayValues():[];
+  assertUniqueActionKeys_(keys);
   const offset=keys.findIndex(r=>r[0]===key);
   let rowNumber=offset<0?0:offset+2;
   if(!rowNumber) {
@@ -304,6 +305,7 @@ function savePartnerActionsBatch_(partner, incoming) {
   const n=Math.max(0,sh.getLastRow()-1);
   const keyRows=n?sh.getRange(2,1,n,1).getDisplayValues():[];
   const existingPartners=n?sh.getRange(2,14,n,7).getDisplayValues():[];
+  assertUniqueActionKeys_(keyRows);
   const index=new Map();
   keyRows.forEach((r,i)=>{if(r[0])index.set(String(r[0]),{row:i+2,cells:existingPartners[i]});});
   let sourceMap=null;
@@ -402,6 +404,11 @@ function saveDashboardData_(data, editor) {
         normalizeOx_(s['대웅제약']), normalizeOx_(s['대웅바이오']), normalizeOx_(s['한올바이오']), nowIso
       ]);
     });
+    // Validate before clearing the sheet: month/outlet/business number is unique.
+    const sourceKeys=new Set(),duplicates=new Set();
+    clean.forEach(r=>{const k=[r[0],r[1],r[3]].join('|||');if(sourceKeys.has(k))duplicates.add(k);else sourceKeys.add(k);});
+    if(duplicates.size)throw new Error('Dashboard Data 중복 '+duplicates.size+
+      '건(월·권역·사업자번호). 원본 유지: '+[...duplicates].slice(0,3).join(', '));
     clean.sort((a,b)=>String(a[0]).localeCompare(String(b[0])) || String(a[1]).localeCompare(String(b[1]),'ko') || String(a[3]).localeCompare(String(b[3])));
     sh.clearContents();
     sh.getRange(1,1,1,9).setValues([['month','outlet','manager','businessNo','businessName','대웅제약','대웅바이오','한올바이오','savedAt']]);
@@ -422,6 +429,22 @@ function normalizeOx_(v) {
   return s === 'O' || s === 'X' ? s : '';
 }
 
+function assertUniqueActionKeys_(rows) {
+  const seen=new Set(),duplicates=new Set();
+  (rows||[]).forEach(r=>{
+    const key=String(Array.isArray(r)?r[0]:(r&&r.key)||'').trim();
+    if(!key)return;
+    if(seen.has(key))duplicates.add(key);
+    else seen.add(key);
+  });
+  if(duplicates.size)throw new Error('Action Board 거래처 키 중복 '+duplicates.size+
+    '건 감지. 입력을 중단했습니다. 중복 행 정리 후 다시 저장하세요.');
+}
+function uniqueSnapshotActions_(rows) {
+  const by=new Map();
+  (rows||[]).forEach(a=>{if(a&&a.key)by.set(String(a.key),a);});
+  return [...by.values()];
+}
 function loadActions_(includeHistory) {
   const ss = SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
   const sh = ss.getSheetByName(DCM_SHEET);
@@ -440,25 +463,34 @@ function loadActions_(includeHistory) {
   // Existing legacy Action Board may still have fewer than 20 columns before setup runs.
   const width=Math.min(20,sh.getMaxColumns());
   const values=sh.getRange(2,1,last-1,width).getDisplayValues().map(r=>r.concat(Array(20-r.length).fill('')));
-  const actions = [], reasonDict = loadReasons_();
+  const byKey=new Map(),duplicateKeys=new Set(),reasonDict = loadReasons_();
   let latestAt = '', latestBy = '';
   values.forEach(r => {
     const key = r[0]; if (!key) return;
     const updatedAt = r[12] || '';
     if (updatedAt && (!latestAt || updatedAt > latestAt)) { latestAt = updatedAt; latestBy = r[11] || ''; }
     if (r[18] && (!latestAt || r[18] > latestAt)) { latestAt=r[18];latestBy=r[17]||''; }
-    actions.push({
+    const next={
       key:key, businessNo:r[1] || '', priority:r[2] || '', businessName:r[3] || '', outlet:r[4] || '', manager:canonicalManager_(r[4],r[5]), aging:r[6] || '',
       reasonCode:reasonCode_(r[7], reasonDict), plan:r[8] || '', dueDate:normalizeDate_(r[9]), status:statusCode_(r[10]), modifiedBy:r[11] || '', updatedAt:r[12] || '', partnerAction:partnerActionFromCells_(r,reasonDict), history:historyMap[key] || []
-    });
+    };
+    const previous=byKey.get(String(key));
+    if(previous){
+      duplicateKeys.add(String(key));
+      // Last edited record wins; no duplicate Action cards may reach either dashboard.
+      const hasPartner=x=>x.partnerAction&&x.partnerAction.editedFields&&x.partnerAction.editedFields.length;
+      const score=x=>(hasPartner(x)?100:0)+(x.updatedAt?10:0);
+      if(score(next)>score(previous)||score(next)===score(previous)&&String(next.updatedAt||'')>=String(previous.updatedAt||''))byKey.set(String(key),next);
+    }else byKey.set(String(key),next);
   });
-  return {actions:actions, updatedBy:latestBy, updatedAt:latestAt};
+  return {actions:[...byKey.values()], duplicateKeys:[...duplicateKeys], updatedBy:latestBy, updatedAt:latestAt};
 }
 
 function saveActions_(actions, editor, mode) {
   const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID),sh=ss.getSheetByName(DCM_SHEET);
   if(!sh)throw new Error('Action Board 시트가 없습니다.');
   const last=sh.getLastRow(),prior=last>=2?sh.getRange(2,1,last-1,13).getDisplayValues():[];
+  assertUniqueActionKeys_(prior);
   const rowByKey=new Map();
   prior.forEach((r,i)=>{if(r[0])rowByKey.set(r[0],{row:i+2,values:r});});
   const isSnapshot=mode==='snapshot';
@@ -466,7 +498,9 @@ function saveActions_(actions, editor, mode) {
   const nowIso=Utilities.formatDate(new Date(),'Asia/Seoul',"yyyy-MM-dd'T'HH:mm:ssXXX");
   const historyRows=[];
   let changedRows=0,latestAt='',latestBy='';
-  (actions||[]).forEach(function(a){
+  const incoming=isSnapshot?uniqueSnapshotActions_(actions):(actions||[]);
+  if(!isSnapshot)assertUniqueActionKeys_(incoming);
+  incoming.forEach(function(a){
     if(!a||!a.key)return;
     const found=rowByKey.get(a.key),parts=String(a.key).split('|||'),prev=found?found.values:Array(13).fill('');
     const outlet=String(a.outlet||prev[4]||parts[0]||''),businessNo=String(a.businessNo||prev[1]||parts[1]||'');

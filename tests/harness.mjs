@@ -66,6 +66,10 @@ const gas=read('apps-script/Code.gs');
 new Function(gas);
 if(!gas.includes('partnerSaveAction')||!gas.includes('savePartnerAction_'))fail('Authenticated Partner write-back endpoint missing');
 if(!gas.includes('repairActionReasonValidation'))fail('Repair utility for legacy H validation missing');
+for(const contract of ['function assertUniqueActionKeys_','function uniqueSnapshotActions_','duplicateKeys:[...duplicateKeys]']){
+ if(!gas.includes(contract))fail('Action Board key uniqueness guard missing: '+contract);
+}
+
 if(!gas.includes("body.type === 'partnerActions'")||!gas.includes("assertPartnerPassword_(partner, body.password)"))fail('Authenticated Partner Action read endpoint missing');
 if(!gas.includes("type === 'dashboard') throw"))fail('Public Dashboard GET unexpectedly enabled');
 if(!gas.includes('fixDaejeonManagersInSheets'))fail('Owner-run historical repair utility missing');
