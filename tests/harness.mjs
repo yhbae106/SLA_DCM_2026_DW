@@ -109,7 +109,7 @@ if(!monthlyRow?.monthlyHistorical||monthlyRow.canEdit!==false||
  monthlyRow.masterAction.plan!=='ERP업체 소통하여 정상 연동 조치'||
  monthlyRow.partnerAction.plan!=='거래처 요청 및 대웅 협조')
   fail('Master historical view did not preserve separate read-only plans');
-if(ids('history')!=='3')fail('Master monthly history filter must show O-only converted transaction');
+if(board.filter(context,'history').map(r=>r.businessNo).join(',')!=='3')fail('Master monthly history filter must show O-only converted transaction');
 ok('Master month-specific completed action appears read-only in unified board');
 
 const ids=(view,entity='all',priority='all',q='')=>board.filter(context,view,entity,priority,q).map(x=>x.businessNo).sort().join(',');
