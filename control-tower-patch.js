@@ -60,7 +60,9 @@ function installLayout(){
   const action=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('통합 Action Board'));
   if(group){group.id='ctGroup';group.classList.add('ct-overview-section');}if(outlet){outlet.id='ctOutlet';outlet.classList.add('ct-overview-section');}
   if(aging)aging.id='ctAging';if(ai)ai.id='ctAiSection';if(risk)risk.id='ctRisk';if(action)action.id='ctAction';if(changes){changes.id='ctChanges';trimDuplicateChangeCards(changes);}if(need)need.id='ctNeed';if(legacyKpis)legacyKpis.classList.add('ct-source-kpis');
-  let anchor=filters;[group,outlet,changes,aging,ai,action,need].forEach(el=>{if(!el)return;anchor.insertAdjacentElement('afterend',el);anchor=el;});if(legacyKpis)main.appendChild(legacyKpis);
+  let anchor=filters;[group,outlet,changes,aging,ai,action,need].forEach(el=>{if(!el)return;anchor.insertAdjacentElement('afterend',el);anchor=el;});
+   const srm=$('srmWorkflow');if(srm&&action)action.insertAdjacentElement('afterend',srm);
+   if(legacyKpis)main.appendChild(legacyKpis);
   let nav=$('ctQuickNav');if(!nav){nav=document.createElement('div');nav.id='ctQuickNav';nav.className='ct-quick-nav';filters.insertAdjacentElement('afterend',nav);}
   nav.innerHTML='<button data-jump="ctGroup">그룹사별 현황</button><button data-jump="ctOutlet">업체별 현황</button><button data-jump="ctChanges">전월 대비 변화</button><button data-jump="ctAging">Aging & Target</button><button data-jump="ctAction">통합 Action Board</button><button data-jump="ctNeed">연동 필요 리스트</button>';
   document.querySelectorAll('#ctQuickNav [data-jump]').forEach(btn=>btn.onclick=()=>{const target=$(btn.dataset.jump);if(!target)return;target.scrollIntoView({behavior:'smooth',block:'start'});});
