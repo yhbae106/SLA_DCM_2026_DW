@@ -153,6 +153,24 @@ function assertMasterPassword_(password) {
  * Configure Script Properties: DCM_EDITOR_PIN_BAE, DCM_EDITOR_PIN_JEONG, DCM_EDITOR_PIN_LIM.
  */
 const DCM_EDITOR_PIN_PROPERTIES={'배영훈':'DCM_EDITOR_PIN_BAE','정직한':'DCM_EDITOR_PIN_JEONG','임인숙':'DCM_EDITOR_PIN_LIM'};
+function setNamedEditorPin() {
+  // Run manually by the authorized Apps Script administrator.
+  const ui=SpreadsheetApp.getUi();
+  const who=ui.prompt('공용 Sync 개인 수정 PIN 설정',
+    '설정할 담당자명을 입력하세요: 배영훈 / 정직한 / 임인숙',ui.ButtonSet.OK_CANCEL);
+  if(who.getSelectedButton()!==ui.Button.OK)return;
+  const editor=String(who.getResponseText()||'').trim();
+  const key=DCM_EDITOR_PIN_PROPERTIES[editor];
+  if(!key)throw new Error('배영훈, 정직한, 임인숙 중 선택해야 합니다.');
+  const answer=ui.prompt(editor+' 개인 수정 PIN',
+    '본인만 아는 8자리 이상의 수정 PIN을 입력하세요. 공유키와 다른 값을 사용하세요.',
+    ui.ButtonSet.OK_CANCEL);
+  if(answer.getSelectedButton()!==ui.Button.OK)return;
+  const pin=String(answer.getResponseText()||'').trim();
+  if(pin.length<8)throw new Error('수정 PIN은 8자리 이상이어야 합니다.');
+  PropertiesService.getScriptProperties().setProperty(key,pin);
+  ui.alert(editor+' 개인 PIN이 저장되었습니다. PIN은 팀 공용 채팅에 공유하지 마세요.');
+}
 function assertNamedEditorPin_(editor,pin){
   const name=String(editor||'').trim(),property=DCM_EDITOR_PIN_PROPERTIES[name];
   if(!property)throw new Error('등록되지 않은 공용 Sync 수정자입니다.');
