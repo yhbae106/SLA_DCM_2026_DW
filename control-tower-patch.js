@@ -99,7 +99,7 @@ function renderAllXActionBoard(){
   const panel=tbody.closest('.ct-panel'),desc=panel?.querySelector('.section-head p');
   if(desc)desc.textContent=`현재 필터의 X 거래처 ${rows.length}건 · 위=마스터 작성/수정, 아래=업체 작성(읽기 전용) · Risk Score 높은 순`;
   const dual=(r,field)=>`<td class="ct-dual-cell"><div class="ct-master-entry"><b>마스터</b>${masterInputMarkup(r,field)}</div>${readonlyPartnerMarkup(r,field)}</td>`;
-  tbody.innerHTML=visible.map(r=>`<tr><td><span class="ct-priority ct-${String(r.priority||'P3').toLowerCase()}">${esc(r.priority||'P3')}</span></td><td><strong>${Number(r.score)||0}</strong></td><td>${esc(r.businessName||'')}</td><td>${esc(r.outlet||'')}</td><td>${esc(r.manager||'')}</td><td>${esc(r.aging||'')}</td>${['reasonCode','plan','dueDate','status'].map(f=>dual(r,f)).join('')}</tr>`).join('')||'<tr><td colspan="10" class="empty">현재 필터에 X 거래처가 없습니다.</td></tr>';
+  tbody.innerHTML=visible.map(r=>`<tr><td><span class="ct-priority ct-${String(r.priority||'P3').toLowerCase()}">${esc(r.priority||'P3')}</span></td><td><strong>${Number(r.score)||0}</strong></td><td>${esc(r.businessName||'')}<button type="button" class="srm-launch" data-srm-open="${esc(r.key)}">SRM 협의</button></td><td>${esc(r.outlet||'')}</td><td>${esc(r.manager||'')}</td><td>${esc(r.aging||'')}</td>${['reasonCode','plan','dueDate','status'].map(f=>dual(r,f)).join('')}</tr>`).join('')||'<tr><td colspan="10" class="empty">현재 필터에 X 거래처가 없습니다.</td></tr>';
   tbody.querySelectorAll('[data-allx-field]').forEach(el=>el.addEventListener('change',()=>saveBoardField(el.dataset.key,el.dataset.allxField,el.value)));
   renderReasonPareto(rows);
   const shown=$('ctActionShown'),more=$('ctActionMore'),all=$('ctActionAll');
