@@ -7,6 +7,8 @@ const DCM_DATA_META_SHEET = 'Dashboard Meta';
 const DCM_PARTNERS = ['백제약품','인천약품','복산나이스','아이팜코리아','유진약품'];
 const DCM_PARTNER_ACTION_HEADERS = ['업체 원인','업체 조치계획','업체 Due','업체 상태','업체 수정자','업체 수정시간','업체 수정필드'];
 const DCM_PARTNER_ACTION_FIELDS = ['reasonCode','plan','dueDate','status'];
+const DCM_SRM_SHEET = 'SRM Events';
+const DCM_SRM_FIELDS = ['eventId','key','outlet','businessNo','entity','type','status','reason','erpVendor','contactTarget','detail','nextAction','owner','dueDate','baselineMonth','actor','side','updatedAt','verificationMonth','result','requestId'];
 const DCM_SYNC_API_VERSION = '20261008-seven-reasons-fast-v3';
 const DCM_REASON_DEFAULTS = {
   '01':'ERP/시스템 미구축','02':'도입 품목 미연동','03':'전산/데이터 오류',
@@ -50,12 +52,25 @@ function doPost(e) {
       if (body.type === 'partnerSaveActions') return json_({ok:true,...withActionLock_(function(){return savePartnerActionsBatch_(partner,body.changes);})});
       return json_({ok:true, ...withActionLock_(function(){return savePartnerAction_(partner,body);})});
     }
+    // The partner is authenticated independently; no shared master token is disclosed.
+    if (body.type === 'srmList' && body.scope === 'partner') {
+      const company=normalizePartner_(body.partner);
+      assertPartnerPassword_(company,body.password);
+      return json_({ok:true,...loadSrmEvents_(company)});
+    }
+    if (body.type === 'srmAppend' && body.scope === 'partner') {
+      const company=normalizePartner_(body.partner);
+      assertPartnerPassword_(company,body.password);
+      return json_({ok:true,...withSrmLock_(()=>appendSrmEvent_(body,'partner',company))});
+    }
     if (body.type === 'saveDashboard') {
       assertMasterPassword_(body.password);
       const result = saveDashboardData_(Array.isArray(body.data) ? body.data : [], body.editor || 'MASTER');
       return json_({ok:true, ...result});
     }
     assertToken_(body.token);
+    if (body.type === 'srmList') return json_({ok:true,...loadSrmEvents_('')});
+    if (body.type === 'srmAppend') return json_({ok:true,...withSrmLock_(()=>appendSrmEvent_(body,'master',''))});
     if (body.type === 'load') return json_({ok:true, ...loadActions_(false), reasons:loadReasons_(),version:DCM_SYNC_API_VERSION});
     if (body.type === 'syncReasons') return json_({ok:true,reasons:loadReasons_(),version:DCM_SYNC_API_VERSION});
     if (body.type === 'repairReasonValidation') {
@@ -713,4 +728,102 @@ function fixDaejeonManagersInSheets() {
     }
   });
   SpreadsheetApp.flush();return '수정한 담당자 셀: '+changed;
+}
+
+
+/* SRM workflow: append-only audit history, one case per outlet/business/entity.
+ * No writes to existing Dashboard Data, Action Board or master/partner cells.
+ * "조치 완료" (DONE) remains distinct from observed X->O (VERIFIED).
+ */
+function withSrmLock_(callback) {
+  const lock=LockService.getScriptLock();
+  if (!lock.tryLock(5000)) throw new Error('동시에 저장 중입니다. 잠시 후 다시 저장해 주세요.');
+  try{return callback();}finally{lock.releaseLock();}
+}
+function ensureSrmSheet_(){
+  const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
+  let sh=ss.getSheetByName(DCM_SRM_SHEET);
+  if(!sh){
+    sh=ss.insertSheet(DCM_SRM_SHEET);
+    sh.getRange(1,1,1,DCM_SRM_FIELDS.length).setValues([DCM_SRM_FIELDS]);
+    sh.setFrozenRows(1);
+    sh.hideSheet();
+  }else{
+    const row=sh.getRange(1,1,1,DCM_SRM_FIELDS.length).getDisplayValues()[0];
+    if(row.some((v,i)=>String(v)!==DCM_SRM_FIELDS[i]))
+      throw new Error('SRM Events 헤더가 규격과 다릅니다. 기존 원본은 변경하지 않았습니다.');
+  }
+  return sh;
+}
+function loadSrmEvents_(partner){
+  const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
+  const sh=ss.getSheetByName(DCM_SRM_SHEET);
+  if(!sh||sh.getLastRow()<2)return {events:[],updatedAt:'',hasMore:false};
+  const count=Math.min(sh.getLastRow()-1,3000),start=sh.getLastRow()-count+1;
+  const records=sh.getRange(start,1,count,DCM_SRM_FIELDS.length).getDisplayValues();
+  let events=records.map(r=>Object.fromEntries(DCM_SRM_FIELDS.map((f,i)=>[f,r[i]||''])))
+    .filter(e=>!partner||partnerOfOutlet_(e.outlet)===partner);
+  const hasMore=events.length>1000;
+  events=events.slice(-1000);
+  return {events:events,updatedAt:events.length?events[events.length-1].updatedAt:'',hasMore:hasMore};
+}
+function srmCheckTransition_(key,entity,baselineMonth){
+  const companyIndex={'대웅제약':5,'대웅바이오':6,'한올바이오':7}[entity];
+  if(companyIndex===undefined)return {passed:false,reason:'검증할 그룹사를 선택해 주세요.'};
+  if(!/^\d{4}-\d{2}$/.test(baselineMonth))return {passed:false,reason:'검증 기준월을 선택해 주세요.'};
+  const sh=SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_DATA_SHEET);
+  if(!sh||sh.getLastRow()<2)return {passed:false,reason:'연동 평가 데이터가 없습니다.'};
+  const rows=sh.getRange(2,1,sh.getLastRow()-1,9).getDisplayValues();
+  let baseline='',latest='',latestMonth='';
+  rows.forEach(r=>{
+    if(String(r[1])+'|||'+String(r[3])!==key)return;
+    if(r[0]===baselineMonth)baseline=String(r[companyIndex]||'').toUpperCase();
+    if(r[0]>=baselineMonth&&r[0]>=latestMonth){latestMonth=r[0];latest=String(r[companyIndex]||'').toUpperCase();}
+  });
+  const passed=baseline==='X'&&latest==='O'&&latestMonth>baselineMonth;
+  return {passed,verificationMonth:latestMonth,reason:passed?'실제 X→O 전환 확인':'기준월 X 및 이후 최신월 O 조건을 만족하지 않습니다.'};
+}
+function appendSrmEvent_(body,side,partner){
+  const key=String(body.key||''),parts=key.split('|||'),entity=String(body.entity||''),
+    status=String(body.status||'OPEN'),type=String(body.eventType||'CASE_UPDATE'),
+    baseline=String(body.baselineMonth||''), requestId=String(body.requestId||'');
+  if(parts.length!==2||!parts[0]||!parts[1]||key.length>240)throw new Error('거래처 식별값이 유효하지 않습니다.');
+  if(side==='partner'&&partnerOfOutlet_(parts[0])!==partner)throw new Error('해당 파트너사의 거래처만 저장할 수 있습니다.');
+  if(!['대웅제약','대웅바이오','한올바이오'].includes(entity))throw new Error('그룹사 선택이 필요합니다.');
+  if(!['CASE_UPDATE','CONTACT','VERIFICATION'].includes(type))throw new Error('잘못된 활동 유형입니다.');
+  if(!['OPEN','CHECKING','ERP_WAIT','IN_PROGRESS','DONE','VERIFIED','REOPENED'].includes(status))
+    throw new Error('허용되지 않는 SRM 진행상태입니다.');
+  if(requestId.length<8||requestId.length>100)throw new Error('중복 저장 방지 요청번호가 필요합니다.');
+  const columns=['reason','erpVendor','contactTarget','detail','nextAction','owner','dueDate','baselineMonth'];
+  const clean={};
+  columns.forEach(f=>{
+    clean[f]=String(body[f]||'').trim();
+    if(clean[f].length>1000)throw new Error(f+' 입력값이 1000자를 초과했습니다.');
+  });
+  if(clean.dueDate&&!/^\d{4}-\d{2}-\d{2}$/.test(clean.dueDate))throw new Error('기한은 YYYY-MM-DD 형식이어야 합니다.');
+  if(clean.baselineMonth&&!/^\d{4}-\d{2}$/.test(clean.baselineMonth))throw new Error('기준월 형식이 올바르지 않습니다.');
+  if(!clean.detail&&!clean.nextAction)throw new Error('협의내용 또는 다음 조치를 입력해 주세요.');
+  const sh=ensureSrmSheet_(),last=sh.getLastRow();
+  const n=Math.min(300,last-1);
+  if(n>0){
+    const ids=sh.getRange(last-n+1,21,n,1).getDisplayValues().flat();
+    if(ids.includes(requestId))return {saved:true,duplicate:true,requestId:requestId};
+  }
+  let verificationMonth='',result='';
+  if(status==='VERIFIED'){
+    const x=srmCheckTransition_(key,entity,clean.baselineMonth);
+    if(!x.passed)throw new Error('X→O 검증 실패: '+x.reason);
+    verificationMonth=x.verificationMonth;
+    result='X→O 확인';
+  }else if(status==='DONE')result='조치 완료·연동 검증 대기';
+  else result='진행 중';
+  const now=Utilities.formatDate(new Date(),'Asia/Seoul',"yyyy-MM-dd'T'HH:mm:ssXXX");
+  const actor=side==='partner'?'유통협력사:'+partner:String(body.actor||'마스터').slice(0,100);
+  const eventId=Utilities.getUuid();
+  const v=[eventId,key,parts[0],parts[1],entity,type,status,clean.reason,clean.erpVendor,
+    clean.contactTarget,clean.detail,clean.nextAction,clean.owner,clean.dueDate,
+    clean.baselineMonth,actor,side,now,verificationMonth,result,requestId];
+  const safe=v.map(x=>/^[=+\-@]/.test(String(x))?"'"+x:x);
+  sh.getRange(sh.getLastRow()+1,1,1,DCM_SRM_FIELDS.length).setValues([safe]);
+  return {saved:true,eventId:eventId,requestId:requestId,updatedAt:now,result:result};
 }
