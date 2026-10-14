@@ -24,8 +24,9 @@ const SYNC_EDITOR_NAMES=['배영훈','정직한','임인숙'];
 function editorPin(){return sessionStorage.getItem(EDITOR_PIN_SESSION)||'';}
 function canEditFor(manager){
  const user=editor(),owner=String(manager||'').trim();
- return !!token()&&!!editorPin()&&SYNC_EDITOR_NAMES.includes(owner)&&
-   (user==='배영훈'||user===owner);
+ return !!token()&&SYNC_EDITOR_NAMES.includes(owner)&&
+   ((user==='배영훈'&&!!window.DCMMasterSync?.isMaster?.())||
+    (!!editorPin()&&(user==='배영훈'||user===owner)));
 }
 function updateEditAccess(){window.dispatchEvent(new CustomEvent('dcm-sync-access-changed',{detail:{editor:editor(),hasPin:!!editorPin()}}));}
 function hash(v){try{return JSON.stringify(v||[]);}catch(e){return ''}}
@@ -196,9 +197,10 @@ async function flushPendingEdits(){
    setStatus('저장 대기 '+items.length+'건 전송 중…','working');
    const enriched=enrichActions(items);
    const expected=editor();
-   if(!editorPin())throw new Error('개인별 수정 PIN을 입력한 후 공용 Sync에 연결해 주세요.');
+   const isMaster=expected==='배영훈'&&!!window.DCMMasterSync?.isMaster?.();
+   if(!isMaster&&!editorPin())throw new Error('개인별 수정 PIN을 입력한 후 공용 Sync에 연결해 주세요.');
    for(const a of enriched){if(!canEditFor(a.manager))throw new Error('편집 권한 없음: '+expected+' 담당 거래처만 수정할 수 있습니다 ('+a.key+').');}
-   const json=await post({type:'save',mode:'edit',editor:expected,editorPin:editorPin(),actions:enriched});
+   const json=await post({type:'save',mode:'edit',editor:expected,editorPin:editorPin(),masterPassword:isMaster?sessionStorage.getItem('dcm-dashboard-master-password')||'':'',actions:enriched});
    acknowledgePendingEdits(items);
    setStatus('저장됨 ✓','ok',json.updatedAt?
      '마지막 수정: '+(json.updatedBy||editor())+' · '+new Date(json.updatedAt).toLocaleString('ko-KR'):'변경사항 저장 완료');
