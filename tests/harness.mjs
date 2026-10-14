@@ -80,6 +80,7 @@ await import('./unified-action-render-regression.mjs');
 
 const mockData=[
  {month:'2026-06',outlet:'A',businessNo:'s',businessName:'Stop June X',manager:'M',statuses:S('X',null,null)},
+ {month:'2026-07',outlet:'A',businessNo:'z',businessName:'July supplier',manager:'M',statuses:S('O',null,null)},
  {month:'2026-08',outlet:'A',businessNo:'1',businessName:'Alpha',manager:'M',statuses:S('X','O',null)},
  {month:'2026-08',outlet:'A',businessNo:'2',businessName:'Beta',manager:'M',statuses:S('X','X','X')},
  {month:'2026-08',outlet:'A',businessNo:'3',businessName:'Gamma',manager:'M',statuses:S('X',null,null)},
@@ -132,7 +133,7 @@ uiEnv.document.getElementById=id=>{
   return oldFind(id);
 };
 const julyStop=board.build();
-if(julyStop.rows.length!==1)fail('Master July must project missing-sales June-X merchant into history');
+if(!julyStop.rows.some(r=>r.key==='A|||s'))fail('Master July must project missing-sales June-X merchant into history');
 const only=board.filter(julyStop,'stopped');
 if(only.length!==1||only[0].key!=='A|||s')fail('Master stopped filter missing July no-sales merchant');
 if(only[0].partnerAction.reasonCode!=='04'||
