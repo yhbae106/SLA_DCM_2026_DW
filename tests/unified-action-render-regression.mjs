@@ -15,7 +15,7 @@ assert.ok(!legacySource.includes("const ab=$('ctActionBody');if(ab)ab.innerHTML=
  'Legacy 9-column render must not write into the unified tbody');
 assert.ok(!/querySelectorAll\(['"]#ctActionBody tr['"]\)/.test(syncSource),
  'Action metadata must not depend on DOM column offsets');
-assert.ok(html.includes('control-tower.js?v=20261014uni13b'),
+assert.ok(html.includes('control-tower.js?v=20261015ui2'),
  'Cache-busted legacy renderer is required on deployed clients');
 
 const data=[],risks=[];
@@ -69,13 +69,15 @@ const expectRows=(count,label)=>{
  assert.equal(lines.length,count,label+' total row count');
  for(const [i,line] of lines.entries()){
    const td=(line.match(/<td\b[^>]*>/g)||[]).length;
-   assert.equal(td,13,label+' row '+i+' has invalid '+td+'-column markup');
+   assert.equal(td,11,label+' row '+i+' has invalid '+td+'-column markup');
    assert.equal((line.match(/class="ct-ox-cell"/g)||[]).length,3,label+' company O/X positions');
    assert.equal((line.match(/class="ct-dual-cell"/g)||[]).length,4,label+' master/partner action columns');
  }
  assert.ok(board.innerHTML.includes('data-allx-field="reasonCode"'),label+' master reason field missing');
  assert.ok(board.innerHTML.includes('data-srm-open='),label+' SRM entry missing');
  assert.ok(!board.innerHTML.includes('data-field="reasonCode"'),label+' stale 9-column field reappeared');
+ assert.ok(!board.innerHTML.includes('수정 PIN으로 공용 Sync에 접속'),label+' permission instructions must not repeat inside cells');
+ assert.ok(!/ct-score|ct-priority/.test(board.innerHTML),label+' scoring UI must remain removed');
 };
 sandbox.__boardRegression.default();expectRows(50,'Default 50 results');
 sandbox.__boardRegression.more();expectRows(100,'50 more results');
@@ -110,4 +112,4 @@ assert.equal(saved.businessName,'검증 거래처 0001','Source record name must
 assert.equal(saved.aging,'4M','Risk aging must be from source records');
 assert.equal(saved.plan,'기존 조치계획','Action changes must remain intact');
 assert.equal(saved.modifiedBy,'검증 담당자');
-console.log('PASS UNIFIED 13-COLUMN HARNESS: default 50, next 50, all 125, filter, legacy redraw, Action/reason sync, source-backed save metadata');
+console.log('PASS UNIFIED 11-COLUMN HARNESS: default 50, next 50, all 125, filter, legacy redraw, Action/reason sync, source-backed save metadata');
