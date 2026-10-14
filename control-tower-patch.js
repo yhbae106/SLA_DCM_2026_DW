@@ -8,6 +8,25 @@ const statusLabel=s=>({TODO:'미조치',IN_PROGRESS:'진행중',WAITING:'업체�
 let actionOpen=true,actionLimit=PAGE_SIZE,actionTimer=null,actionView='x',actionEntity='all',actionPriority='all',actionSearch='',activeKpi=null;
 const ACTION_VIEWS={x:'현재 미연동 X 거래처',persist:'2개월 이상 지속 X',all3:'3개사 모두 X',improved:'X→O 개선 거래처',worsened:'O→X 악화 거래처',new:'선택월 신규 도도매',stopped:'선택월 중단 도도매',history:'월별 조치 이력',supply:'도도매 공급처 전체'};
 const KPI_VIEWS={rate:'supply',unlinked:'x',need:'x',persistent:'persist',all3:'all3',improved:'improved',worsened:'worsened',supply:'supply'};
+const VIEW_ORDER=['x','persist','all3','improved','worsened','history','supply','new','stopped'];
+function scopedViewLabel(view,month){
+ if(view!=='new'&&view!=='stopped')return ACTION_VIEWS[view]||ACTION_VIEWS.x;
+ const m=/^\d{4}-(0[1-9]|1[0-2])$/.exec(String(month||''));
+ return (m?Number(m[1])+'월':'선택월')+' '+(view==='new'?'신규 도도매':'중단 도도매');
+}
+function syncActionViewOptions(month){
+ const select=$('ctActionView');if(!select?.options)return;
+ const seen=new Set();
+ for(const option of [...select.options]){
+  const view=option.value;
+  if(!Object.prototype.hasOwnProperty.call(ACTION_VIEWS,view)||seen.has(view)){option.remove();continue;}
+  seen.add(view);option.textContent=scopedViewLabel(view,month);
+ }
+ for(const view of VIEW_ORDER)if(!seen.has(view)){
+  const option=document.createElement('option');option.value=view;option.textContent=scopedViewLabel(view,month);select.appendChild(option);
+ }
+ if(!Object.prototype.hasOwnProperty.call(ACTION_VIEWS,select.value))select.value=actionView;
+}
 function ensureHeroKpis(){
   const grid=document.querySelector('.ct-hero .ct-kpis');if(!grid)return;
   const rate=$('ctRate')?.closest('.ct-kpi'),delta=$('ctDelta')?.closest('.ct-kpi'),x=$('ctX')?.closest('.ct-kpi'),x2o=$('ctX2O')?.closest('.ct-kpi'),o2x=$('ctO2X')?.closest('.ct-kpi'),persist=$('ctPersist')?.closest('.ct-kpi'),all3=$('ctAll3')?.closest('.ct-kpi');
@@ -203,6 +222,7 @@ function filterUnifiedRows(ctx,view='x',entity='all',priority='all',search=''){
 function renderAllXActionBoard(){
  const tbody=$('ctActionBody');if(!actionOpen||!tbody)return;
  const L=window.DCMLogic,E=L?.E||[],ctx=buildBoardContext();
+ syncActionViewOptions(ctx.month);
  const rows=filterUnifiedRows(ctx,actionView,actionEntity,actionPriority,actionSearch),visible=rows.slice(0,actionLimit);
  const reasons=window.DCM_ACTION_REASONS||{};
  const historicalField=(a,field)=>{
@@ -222,7 +242,7 @@ function renderAllXActionBoard(){
  tbody.innerHTML=visible.map(r=>'<tr>'+
   '<td><span class="ct-priority ct-'+String(r.priority||'P3').toLowerCase()+'">'+esc(r.priority||'P3')+'</span></td>'+
   '<td class="ct-score"><strong title="현재 미연동 그룹사 '+r.xCount+'건 · Risk 기반 점수">'+(Number(r.score)||0)+'</strong></td>'+
-  '<td class="ct-merchant"><strong>'+esc(r.businessName||'')+'</strong><small>'+esc(r.businessNo||'')+'</small>'+(r.monthlyHistorical?'<small class="ct-monthly-archive" title="DCM O/X 개선 결과 기반 사후 등록 이력">'+(r.historyType==='SUPPLY_STOP'?'7월 공급 중단(관리분류)':'월별 X→O 조치 이력')+'</small>':'')+'<button type="button" class="srm-launch" data-srm-open="'+esc(r.key)+'">SRM 협의</button></td>'+
+  '<td class="ct-merchant"><strong>'+esc(r.businessName||'')+'</strong><small>'+esc(r.businessNo||'')+'</small>'+(r.monthlyHistorical?'<small class="ct-monthly-archive" title="DCM O/X 개선 결과 기반 사후 등록 이력">'+(r.historyType==='SUPPLY_STOP'?'공급 중단(사후 관리 분류)':'월별 X→O 조치 이력')+'</small>':'')+'<button type="button" class="srm-launch" data-srm-open="'+esc(r.key)+'">SRM 협의</button></td>'+
   '<td>'+esc(r.outlet||'')+'</td><td>'+esc(r.manager||'')+'</td>'+
   E.map(e=>status(r,e)).join('')+
   '<td>'+esc(r.aging||'0M')+'</td>'+
@@ -234,7 +254,7 @@ function renderAllXActionBoard(){
  const baseRisk=window.DCMActionSync?.allRisk?.()||[];renderReasonPareto(baseRisk);
  const assessed=rows.reduce((n,r)=>n+E.filter(e=>L.normStatus(r.statuses?.[e])).length,0);
  const xcount=rows.reduce((n,r)=>n+E.filter(e=>L.normStatus(r.statuses?.[e])==='X').length,0);
- if($('ctActionViewName'))$('ctActionViewName').textContent=ACTION_VIEWS[actionView]||ACTION_VIEWS.x;
+ if($('ctActionViewName'))$('ctActionViewName').textContent=scopedViewLabel(actionView,ctx.month);
  if($('ctActionCount'))$('ctActionCount').textContent=rows.length.toLocaleString()+'처 · O '+(assessed-xcount).toLocaleString()+'건 / X '+xcount.toLocaleString()+'건';
  const shown=$('ctActionShown'),more=$('ctActionMore'),all=$('ctActionAll');
  if(shown)shown.textContent=Math.min(visible.length,rows.length).toLocaleString()+' / '+rows.length.toLocaleString()+'처 표시';
@@ -281,6 +301,6 @@ function installAllXBoard(){
  window.addEventListener('storage',e=>{if(e.key===ACTION_KEY||e.key===DATA_KEY)scheduleActionRender(80);});
  renderAllXActionBoard();
 }
-window.DCMUnifiedAction={filter:filterUnifiedRows,build:buildBoardContext,select:setActionView};
+window.DCMUnifiedAction={filter:filterUnifiedRows,build:buildBoardContext,select:setActionView,label:scopedViewLabel};
 window.addEventListener('load',()=>{installLayout();installChangeFilterFix();installAllXBoard();renderReasonPareto();setTimeout(syncHeroSupportKpis,120);const old=document.getElementById('resetBtn');if(!old)return;const b=old.cloneNode(true);old.replaceWith(b);b.onclick=()=>{if(!confirm('브라우저에 추가한 월별 데이터와 Action 이력을 지우고 최초 6월/7월 데이터로 복원할까요?'))return;localStorage.setItem(DATA_KEY,JSON.stringify(window.DCM_BASE_DATA||[]));localStorage.setItem(ACTION_KEY,'[]');location.reload();};});
 })();
