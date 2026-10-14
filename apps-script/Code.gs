@@ -80,7 +80,7 @@ function doPost(e) {
     const incomingActions=Array.isArray(body.actions)?body.actions:[];
     const mode=String(body.mode||'edit');
     const result=withActionLock_(function(){
-      if(mode==='edit')assertActionEditorAccess_(body.editor,body.editorPin,incomingActions);
+      if(mode==='edit')assertActionEditorAccess_(body.editor,body.editorPin,incomingActions,body.masterPassword);
       return saveActions_(incomingActions,body.editor||'',mode);
     });
     return json_({ok:true, ...result});
@@ -174,8 +174,10 @@ function getAuthoritativeActionManagers_(keys){
   }
   return out;
 }
-function assertActionEditorAccess_(editor,pin,actions){
-  const name=assertNamedEditorPin_(editor,pin);
+function assertActionEditorAccess_(editor,pin,actions,masterPassword){
+  const name=String(editor||'').trim();
+  if(name==='배영훈'&&masterPassword)assertMasterPassword_(masterPassword);
+  else assertNamedEditorPin_(name,pin);
   const keys=[...new Set((actions||[]).map(a=>String(a?.key||'')))];
   if(!keys.length)return;
   const managers=getAuthoritativeActionManagers_(keys);
