@@ -8,25 +8,8 @@ const statusLabel=s=>({TODO:'미조치',IN_PROGRESS:'진행중',WAITING:'업체�
 let actionOpen=true,actionLimit=PAGE_SIZE,actionTimer=null,actionView='x',actionEntity='all',actionPriority='all',actionSearch='',activeKpi=null;
 const ACTION_VIEWS={x:'현재 미연동 X 거래처',persist:'2개월 이상 지속 X',all3:'3개사 모두 X',improved:'X→O 개선 거래처',worsened:'O→X 악화 거래처',new:'선택월 신규 도도매',stopped:'선택월 중단 도도매',history:'월별 조치 이력',supply:'도도매 공급처 전체'};
 const KPI_VIEWS={rate:'supply',unlinked:'x',need:'x',persistent:'persist',all3:'all3',improved:'improved',worsened:'worsened',supply:'supply'};
-const VIEW_ORDER=['x','persist','all3','improved','worsened','history','supply','new','stopped'];
-function scopedViewLabel(view,month){
- if(view!=='new'&&view!=='stopped')return ACTION_VIEWS[view]||ACTION_VIEWS.x;
- const m=/^\d{4}-(0[1-9]|1[0-2])$/.exec(String(month||''));
- return (m?Number(m[1])+'월':'선택월')+' '+(view==='new'?'신규 도도매':'중단 도도매');
-}
-function syncActionViewOptions(month){
- const select=$('ctActionView');if(!select?.options)return;
- const seen=new Set();
- for(const option of [...select.options]){
-  const view=option.value;
-  if(!Object.prototype.hasOwnProperty.call(ACTION_VIEWS,view)||seen.has(view)){option.remove();continue;}
-  seen.add(view);option.textContent=scopedViewLabel(view,month);
- }
- for(const view of VIEW_ORDER)if(!seen.has(view)){
-  const option=document.createElement('option');option.value=view;option.textContent=scopedViewLabel(view,month);select.appendChild(option);
- }
- if(!Object.prototype.hasOwnProperty.call(ACTION_VIEWS,select.value))select.value=actionView;
-}
+function scopedViewLabel(v,m){if(v!=='new'&&v!=='stopped')return ACTION_VIEWS[v]||ACTION_VIEWS.x;const n=/^\d{4}-(0[1-9]|1[0-2])$/.test(m)?Number(m.slice(5))+'월':'선택월';return n+' '+(v==='new'?'신규':'중단')+' 도도매';}
+function syncActionViewOptions(m){const el=$('ctActionView');if(!el?.options)return;const seen=new Set();[...el.options].forEach(o=>{if(!ACTION_VIEWS[o.value]||seen.has(o.value))o.remove();else{seen.add(o.value);o.textContent=scopedViewLabel(o.value,m);}});}
 function ensureHeroKpis(){
   const grid=document.querySelector('.ct-hero .ct-kpis');if(!grid)return;
   const rate=$('ctRate')?.closest('.ct-kpi'),delta=$('ctDelta')?.closest('.ct-kpi'),x=$('ctX')?.closest('.ct-kpi'),x2o=$('ctX2O')?.closest('.ct-kpi'),o2x=$('ctO2X')?.closest('.ct-kpi'),persist=$('ctPersist')?.closest('.ct-kpi'),all3=$('ctAll3')?.closest('.ct-kpi');
