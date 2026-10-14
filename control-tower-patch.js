@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>'\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]));
 const statusLabel=s=>({TODO:'미조치',IN_PROGRESS:'진행중',WAITING:'업체회신',DONE:'완료'})[s]||'미조치';
 let actionOpen=true,actionLimit=PAGE_SIZE,actionTimer=null,actionView='x',actionEntity='all',actionPriority='all',actionSearch='',activeKpi=null;
-const ACTION_VIEWS={x:'현재 미연동 X 거래처',persist:'2개월 이상 지속 X',all3:'3개사 모두 X',improved:'X→O 개선 거래처',worsened:'O→X 악화 거래처',new:'선택월 신규 도도매',stopped:'선택월 중단 도도매',history:'월별 조치 이력',supply:'도도매 공급처 전체'};
+const ACTION_VIEWS={x:'우선 조치 필요처',persist:'2개월 이상 지속 X',all3:'3개사 모두 X',improved:'X→O 개선 거래처',worsened:'O→X 악화 거래처',new:'선택월 신규 도도매',stopped:'선택월 중단 도도매',history:'월별 조치 이력',supply:'도도매 공급처 전체'};
 const KPI_VIEWS={rate:'supply',unlinked:'x',need:'x',persistent:'persist',all3:'all3',improved:'improved',worsened:'worsened',supply:'supply'};
 function scopedViewLabel(v,m){if(v!=='new'&&v!=='stopped')return ACTION_VIEWS[v]||ACTION_VIEWS.x;const n=/^\d{4}-(0[1-9]|1[0-2])$/.test(m)?Number(m.slice(5))+'월':'선택월';return n+' '+(v==='new'?'신규':'중단')+' 도도매';}
 function syncActionViewOptions(m){const el=$('ctActionView');if(!el?.options)return;const seen=new Set();[...el.options].forEach(o=>{if(!ACTION_VIEWS[o.value]||seen.has(o.value))o.remove();else{seen.add(o.value);o.textContent=scopedViewLabel(o.value,m);}});}
@@ -56,7 +56,7 @@ function installLayout(){
   const need=[...main.querySelectorAll('.table-panel')].find(x=>x.querySelector('h2')?.textContent.includes('연동 필요 리스트'));
   const legacyKpis=main.querySelector('.kpis');
   const ctPanels=[...main.querySelectorAll(':scope > .ct-panel')].filter(x=>x!==hero);
-  const aging=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('DCM Aging & Target'));
+  const aging=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('DCM 미연동 세부 현황'));
   const ai=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('AI 월간 분석'));
   const risk=null; // Risk TOP20 duplicates the unified Action Board; removed from markup.
   const action=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('통합 Action Board'));
@@ -66,7 +66,7 @@ function installLayout(){
    const srm=$('srmWorkflow');if(srm&&action)action.insertAdjacentElement('afterend',srm);
    if(legacyKpis)main.appendChild(legacyKpis);
   let nav=$('ctQuickNav');if(!nav){nav=document.createElement('div');nav.id='ctQuickNav';nav.className='ct-quick-nav';filters.insertAdjacentElement('afterend',nav);}
-  nav.innerHTML='<button data-jump="ctGroup">그룹사별 현황</button><button data-jump="ctOutlet">업체별 현황</button><button data-jump="ctChanges">전월 대비 변화</button><button data-jump="ctAging">Aging & Target</button><button data-jump="ctAction">통합 Action Board</button><button data-jump="ctNeed">연동 필요 리스트</button>';
+  nav.innerHTML='<button data-jump="ctGroup">그룹사별 현황</button><button data-jump="ctOutlet">업체별 현황</button><button data-jump="ctChanges">전월 대비 변화</button><button data-jump="ctAging">미연동 세부 현황</button><button data-jump="ctAction">통합 Action Board</button><button data-jump="ctNeed">연동 필요 리스트</button>';
   document.querySelectorAll('#ctQuickNav [data-jump]').forEach(btn=>btn.onclick=()=>{const target=$(btn.dataset.jump);if(!target)return;target.scrollIntoView({behavior:'smooth',block:'start'});});
   syncHeroSupportKpis();['kpiAbs','kpiSupply','kpiAbsSub','kpiSupplySub','ctDelta'].forEach(id=>{const node=$(id);if(node)new MutationObserver(syncHeroSupportKpis).observe(node,{childList:true,subtree:true,characterData:true});});['manager','outlet','month'].forEach(id=>$(id)?.addEventListener('change',()=>setTimeout(syncHeroSupportKpis,80)));
 }
@@ -216,21 +216,19 @@ function renderAllXActionBoard(){
   };
   const dual=(r,field)=>'<td class="ct-dual-cell"><div class="ct-master-entry"><b>마스터</b>'+
    (r.monthlyHistorical?'<span class="ct-historical-value" title="DCM 개선 결과 기반 사후 정리">'+esc(historicalField(r.masterAction,field))+'</span>':
-   (r.canEdit?masterInputMarkup(r,field):'<span class="ct-readonly">해당 담당자 수정 PIN으로 공용 Sync에 접속하고 최신월을 선택해야 입력 가능합니다</span>'))+
+   (r.canEdit?masterInputMarkup(r,field):'<span class="ct-readonly" title="읽기 전용">'+esc(historicalField(r,field))+'</span>'))+
    '</div>'+readonlyPartnerMarkup(r,field)+'</td>';
  const status=(r,e)=>{
   const st=L.normStatus(r.statuses?.[e])||'—';
   return '<td class="ct-ox-cell"><span class="ct-status-badge '+(st==='O'?'o':st==='X'?'x':'na')+'" title="'+esc(e)+' '+(st==='O'?'연동':st==='X'?'미연동':'미평가')+'">'+st+'</span></td>';
  };
  tbody.innerHTML=visible.map(r=>'<tr>'+
-  '<td><span class="ct-priority ct-'+String(r.priority||'P3').toLowerCase()+'">'+esc(r.priority||'P3')+'</span></td>'+
-  '<td class="ct-score"><strong title="현재 미연동 그룹사 '+r.xCount+'건 · Risk 기반 점수">'+(Number(r.score)||0)+'</strong></td>'+
   '<td class="ct-merchant"><strong>'+esc(r.businessName||'')+'</strong><small>'+esc(r.businessNo||'')+'</small>'+(r.monthlyHistorical?'<small class="ct-monthly-archive" title="DCM O/X 개선 결과 기반 사후 등록 이력">'+(r.historyType==='SUPPLY_STOP'?'공급 중단(사후 관리 분류)':'월별 X→O 조치 이력')+'</small>':'')+'<button type="button" class="srm-launch" data-srm-open="'+esc(r.key)+'">SRM 협의</button></td>'+
   '<td>'+esc(r.outlet||'')+'</td><td>'+esc(r.manager||'')+'</td>'+
   E.map(e=>status(r,e)).join('')+
-  '<td>'+esc(r.aging||'0M')+'</td>'+
+  '<td>'+esc(r.xCount?String(r.aging||'0M').replace(/M$/,'개월'):'—')+'</td>'+
   ['reasonCode','plan','dueDate','status'].map(f=>dual(r,f)).join('')+'</tr>').join('')||
-  '<tr><td colspan="13" class="empty">선택한 조건에 해당하는 거래처가 없습니다. 필터를 변경해 주세요.</td></tr>';
+  '<tr><td colspan="11" class="empty">선택한 조건에 해당하는 거래처가 없습니다. 필터를 변경해 주세요.</td></tr>';
  tbody.querySelectorAll('[data-allx-field]').forEach(el=>el.addEventListener('change',()=>{
   saveBoardField(el.dataset.key,el.dataset.allxField,el.value);
  }));
@@ -261,7 +259,7 @@ function setActionView(view,{scroll=true,kpi=null}={}){
 }
 function installAllXBoard(){
  const tbody=$('ctActionBody');if(!tbody)return;ensureActionControls();
- for(const [id,variable] of [['ctActionView','view'],['ctActionEntity','entity'],['ctActionPriority','priority'],['ctActionSearch','search']]){
+ for(const [id,variable] of [['ctActionView','view'],['ctActionEntity','entity'],['ctActionSearch','search']]){
   const el=$(id);if(!el)continue;
   el.addEventListener(variable==='search'?'input':'change',()=>{
    actionView=$('ctActionView')?.value||'x';actionEntity=$('ctActionEntity')?.value||'all';
@@ -273,7 +271,7 @@ function installAllXBoard(){
  document.querySelectorAll('.ct-hero .ct-kpi[data-kpi]').forEach(card=>{
   const view=KPI_VIEWS[card.dataset.kpi];if(!view)return;
   card.setAttribute('role','button');card.tabIndex=0;card.setAttribute('aria-controls','ctAction');
-  card.title='클릭하면 '+ACTION_VIEWS[view]+' 목록이 열립니다.';
+  card.title='클릭하면 '+ACTION_VIEWS[view]+' 목록으로 이동합니다.';
   card.addEventListener('click',()=>setActionView(view,{kpi:card.dataset.kpi}));
   card.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setActionView(view,{kpi:card.dataset.kpi});}});
  });
