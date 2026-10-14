@@ -66,6 +66,7 @@ for(const company of ['대웅제약','대웅바이오','한올바이오']){
 }
 const masterPatch=read('control-tower-patch.js'),boardCss=read('control-tower-layout.css');
 new Function(masterPatch);
+if(!masterPatch.includes("const srm=$('srmWorkflow');if(srm&&action)action.insertAdjacentElement('afterend',srm);"))fail('SRM workflow must move alongside unified board');
 if(!masterPatch.includes("data-srm-open")||!masterPatch.includes("readonlyPartnerMarkup")||!masterPatch.includes("saveBoardField"))
   fail('Unified Board lost SRM case link, partner notes or master write-back');
 if(!masterPatch.includes("card.addEventListener('keydown'")||!masterPatch.includes('KPI_VIEWS'))
