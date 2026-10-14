@@ -1,1 +1,66 @@
 .ct-compact-filters{margin-top:0}.ct-hero{border-radius:0}.ct-quick-nav{position:fixed;left:0;top:0;bottom:0;width:196px;z-index:40;display:flex;flex-direction:column;gap:7px;margin:0;padding:92px 12px 150px;background:linear-gradient(180deg,#0b376f 0%,#0a3267 45%,#082855 100%);border:0;border-radius:0;box-shadow:5px 0 18px rgba(7,35,77,.12);overflow:auto}.ct-quick-nav:before{content:'DCM\A CONTROL TOWER';white-space:pre;position:absolute;left:18px;top:22px;color:#fff;font-weight:950;font-size:25px;line-height:.84;letter-spacing:-.8px}.ct-quick-nav:after{content:'기준 데이터\A 2026년 운영 대시보드';white-space:pre;position:absolute;left:12px;right:12px;bottom:78px;padding:12px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:rgba(255,255,255,.055);color:#b9d1f1;font-size:10px;font-weight:750;line-height:1.7}.ct-quick-nav button{position:relative;width:100%;height:41px;text-align:left;border:1px solid transparent;background:transparent;color:#d7e7fb;border-radius:8px;padding:0 12px 0 40px;font-weight:800;font-size:0;cursor:pointer;transition:.15s}.ct-quick-nav button:before{position:absolute;left:12px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:18px;height:18px;color:#aac9ef;font-size:15px}.ct-quick-nav button:after{font-size:11.5px}.ct-quick-nav button:nth-child(1):before{content:'⌂'}.ct-quick-nav button:nth-child(1):after{content:'대시보드'}.ct-quick-nav button:nth-child(2):before{content:'▣'}.ct-quick-nav button:nth-child(2):after{content:'연동 현황'}.ct-quick-nav button:nth-child(3):before{content:'≋'}.ct-quick-nav button:nth-child(3):after{content:'업체 관리'}.ct-quick-nav button:nth-child(4):before{content:'⚠'}.ct-quick-nav button:nth-child(4):after{content:'리스크 관리'}.ct-quick-nav button:nth-child(5):before{content:'▤'}.ct-quick-nav button:nth-child(5):after{content:'Action Board'}.ct-quick-nav button:nth-child(6):before{content:'▧'}.ct-quick-nav button:nth-child(6):after{content:'보고서'}.ct-quick-nav button:nth-child(7):before{content:'●'}.ct-quick-nav button:nth-child(7):after{content:'알림'}.ct-quick-nav button:hover{background:rgba(255,255,255,.085);color:#fff;border-color:rgba(255,255,255,.08)}.ct-quick-nav button:first-child{background:linear-gradient(90deg,#176ddd,#2585f2);color:#fff;box-shadow:0 5px 14px rgba(3,31,73,.24)}.ct-quick-nav button:first-child:before{color:#fff}.ct-action-lazy>.section-head{align-items:center}.ct-action-toggle{margin-left:auto;white-space:nowrap}.ct-action-collapsed>:not(.section-head){display:none!important}.ct-action-collapsed{padding-bottom:14px}.ct-action-open .ct-board{max-height:620px}.ct-action-more{display:flex;align-items:center;justify-content:flex-end;gap:8px;padding:9px 0 2px}.ct-action-more span{margin-right:auto;font-size:11px;font-weight:800;color:#718096}.ct-action-more button[hidden]{display:none}.ct-action-open #ctActionBody tr{content-visibility:auto;contain-intrinsic-size:42px}@media(max-width:1320px){.ct-quick-nav{width:178px}.ct-quick-nav:before{font-size:22px}}@media(max-width:1000px){.ct-quick-nav{position:fixed;left:0;right:0;top:0;bottom:auto;width:auto;height:52px;display:flex;flex-direction:row;align-items:center;gap:5px;padding:7px 10px;background:#0b3267;overflow-x:auto;overflow-y:hidden}.ct-quick-nav:before{content:'DCM';position:static;font-size:18px;line-height:1;margin:0 8px 0 2px}.ct-quick-nav:after{display:none}.ct-quick-nav button{width:auto;height:36px;white-space:nowrap;padding:0 10px}.ct-quick-nav button:before{display:none}.ct-quick-nav button:after{font-size:10.5px}.ct-quick-nav button:first-child{box-shadow:none}.ct-action-lazy>.section-head{align-items:flex-start}.ct-action-toggle{margin-left:0}.ct-action-more{flex-wrap:wrap;justify-content:flex-start}.ct-action-more span{width:100%;margin-right:0}}
+
+/* Unified Action Board: risk, three-company O/X, editable master and partner details. */
+#ctAction.ct-action-unified{min-width:0;scroll-margin-top:20px;}
+#ctAction .section-head{display:flex;align-items:center;flex-wrap:wrap;gap:10px;}
+#ctAction .section-head>div{min-width:0;}
+#ctAction .ct-board-note{display:inline;font-size:11px;color:#55769b;font-weight:750;margin-left:7px;}
+.ct-action-filterbar{display:grid;grid-template-columns:minmax(150px,1.4fr) minmax(135px,.9fr) minmax(130px,.75fr) minmax(190px,1.5fr) auto;gap:10px;align-items:end;background:#f6f9fd;border:1px solid #dbe5f2;border-radius:10px;padding:12px;margin:12px 0 8px;}
+.ct-action-filterbar label{font-size:10.5px;font-weight:850;color:#42617f;min-width:0;}
+.ct-action-filterbar select,.ct-action-filterbar input{display:block;width:100%;min-width:0;box-sizing:border-box;min-height:37px;margin-top:5px;padding:7px 10px;color:#254465;font-family:inherit;font-size:11px;background:#fff;border-radius:7px;border:1px solid #cfddeb;}
+.ct-action-filterbar .ct-btn{height:37px;white-space:nowrap;}
+.ct-action-filterbar select:focus-visible,.ct-action-filterbar input:focus-visible{outline:2px solid #247cd0;outline-offset:2px;}
+.ct-action-list-meta{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:9px;padding:5px 2px 10px;font-size:11px;color:#657993;}
+.ct-action-list-meta strong{color:#174e89;font-size:12px;}
+.ct-action-legend{display:flex;gap:5px;align-items:center;}
+.ct-action-legend .ct-status-badge:not(:first-child){margin-left:8px;}
+.ct-status-badge{display:inline-grid;place-items:center;min-width:29px;height:25px;border-radius:6px;padding:2px 5px;font-weight:950;font-size:11px;}
+.ct-status-badge.o{color:#08774d;background:#e3f7eb;border:1px solid #bde8d0;}
+.ct-status-badge.x{color:#ba3a36;background:#fff0ef;border:1px solid #f0c8c5;}
+.ct-status-badge.na{color:#748398;background:#f1f3f6;border:1px solid #dce3eb;}
+.ct-action-scoreguide{margin:0 0 8px;color:#426b9a;font-size:10.5px;}
+.ct-action-scoreguide summary{cursor:pointer;font-weight:800;padding:4px 0;}
+.ct-action-scoreguide .ct-score-guide{margin:7px 0 0;}
+#ctAction .ct-board{max-height:min(69vh,720px);overflow:auto;overscroll-behavior:contain;scrollbar-color:#c5d5e8 #f5f9fd;border:1px solid #dde6f0;border-radius:9px;}
+#ctAction .ct-board table{min-width:1580px;border-collapse:separate;border-spacing:0;table-layout:auto;}
+#ctAction .ct-board thead th{position:sticky;top:0;z-index:3;background:#edf3fa;white-space:nowrap;box-shadow:0 1px #d5e1ef;font-size:10.5px;}
+#ctAction .ct-board tbody td{vertical-align:middle;background:#fff;font-size:10.5px;}
+#ctAction .ct-board tbody tr:hover td{background:#f8fbff;}
+#ctAction .ct-board thead th:nth-child(1){left:0;z-index:5;min-width:78px;background:#edf3fa;}
+#ctAction .ct-board tbody td:nth-child(1){position:sticky;left:0;z-index:2;background:#fff;min-width:78px;}
+#ctAction .ct-board thead th:nth-child(2){left:78px;z-index:5;min-width:82px;background:#edf3fa;}
+#ctAction .ct-board tbody td:nth-child(2){position:sticky;left:78px;z-index:2;background:#fff;min-width:82px;}
+#ctAction .ct-board thead th:nth-child(3){left:160px;z-index:5;min-width:210px;background:#edf3fa;border-right:1px solid #dce5ef;}
+#ctAction .ct-board tbody td:nth-child(3){position:sticky;left:160px;z-index:2;background:#fff;min-width:210px;max-width:230px;border-right:1px solid #dce5ef;}
+#ctAction .ct-board tbody tr:hover td:nth-child(-n+3){background:#f8fbff;}
+#ctAction .ct-merchant strong{display:block;white-space:normal;overflow-wrap:anywhere;line-height:1.5;color:#264565;}
+#ctAction .ct-merchant small{display:block;color:#8491a4;font-size:9px;margin-top:3px;font-variant-numeric:tabular-nums;}
+#ctAction .ct-merchant .srm-launch{display:block;margin:5px 0 0!important;}
+#ctAction .ct-ox-cell{text-align:center;min-width:69px;}
+#ctAction .ct-score{text-align:center;font-variant-numeric:tabular-nums;}
+#ctAction .ct-readonly{display:block;padding:6px 2px;color:#6b7d90;font-size:10px;overflow-wrap:anywhere;}
+#ctAction .ct-dual-cell{min-width:195px;max-width:250px;vertical-align:top;}
+#ctAction .ct-dual-cell input,#ctAction .ct-dual-cell select{max-width:100%;min-width:0;box-sizing:border-box;}
+#ctAction.ct-action-unified .ct-action-more{display:flex;padding-top:10px;}
+.ct-hero .ct-kpi[data-kpi]{cursor:pointer;transition:border-color .17s,box-shadow .17s,transform .17s;}
+.ct-hero .ct-kpi[data-kpi]:hover{border-color:#8bb8e9;transform:translateY(-1px);box-shadow:0 5px 18px rgba(30,84,149,.13);}
+.ct-hero .ct-kpi[data-kpi]:focus-visible{outline:3px solid #277ddd;outline-offset:3px;}
+.ct-hero .ct-kpi[data-kpi].ct-kpi-selected{border-color:#3581d6;box-shadow:0 0 0 2px rgba(43,118,208,.17);}
+.ct-quick-nav button[data-jump="ctGroup"]:after{content:'그룹사별 현황';}
+.ct-quick-nav button[data-jump="ctOutlet"]:after{content:'업체별 현황';}
+.ct-quick-nav button[data-jump="ctChanges"]:after{content:'전월 대비 변화';}
+.ct-quick-nav button[data-jump="ctAging"]:after{content:'Aging & Target';}
+.ct-quick-nav button[data-jump="ctAction"]:after{content:'통합 Action Board';}
+.ct-quick-nav button[data-jump="ctNeed"]:after{content:'연동 필요 리스트';}
+@media(max-width:1350px){
+ .ct-action-filterbar{grid-template-columns:repeat(3,minmax(0,1fr));}
+ .ct-action-filterbar .ct-action-search-label{grid-column:span 2;}
+}
+@media(max-width:760px){
+ .ct-action-filterbar{grid-template-columns:repeat(2,minmax(0,1fr));}
+ .ct-action-filterbar .ct-action-search-label{grid-column:1/-1;}
+ .ct-action-filterbar .ct-btn{width:100%;}
+ #ctAction .ct-board thead th:nth-child(1),#ctAction .ct-board tbody td:nth-child(1){min-width:65px;}
+ #ctAction .ct-board thead th:nth-child(2),#ctAction .ct-board tbody td:nth-child(2){left:65px;min-width:65px;}
+ #ctAction .ct-board thead th:nth-child(3),#ctAction .ct-board tbody td:nth-child(3){left:130px;min-width:168px;max-width:168px;}
+}
