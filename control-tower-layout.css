@@ -5,7 +5,7 @@
 #ctAction .section-head{display:flex;align-items:center;flex-wrap:wrap;gap:10px;}
 #ctAction .section-head>div{min-width:0;}
 #ctAction .ct-board-note{display:inline;font-size:11px;color:#55769b;font-weight:750;margin-left:7px;}
-.ct-action-filterbar{display:grid;grid-template-columns:minmax(150px,1.4fr) minmax(135px,.9fr) minmax(130px,.75fr) minmax(190px,1.5fr) auto;gap:10px;align-items:end;background:#f6f9fd;border:1px solid #dbe5f2;border-radius:10px;padding:12px;margin:12px 0 8px;}
+.ct-action-filterbar{display:grid;grid-template-columns:minmax(165px,1.25fr) minmax(135px,.85fr) minmax(215px,1.6fr) auto;gap:10px;align-items:end;background:#f6f9fd;border:1px solid #dbe5f2;border-radius:10px;padding:12px;margin:12px 0 8px;}
 .ct-action-filterbar label{font-size:10.5px;font-weight:850;color:#42617f;min-width:0;}
 .ct-action-filterbar select,.ct-action-filterbar input{display:block;width:100%;min-width:0;box-sizing:border-box;min-height:37px;margin-top:5px;padding:7px 10px;color:#254465;font-family:inherit;font-size:11px;background:#fff;border-radius:7px;border:1px solid #cfddeb;}
 .ct-action-filterbar .ct-btn{height:37px;white-space:nowrap;}
@@ -55,9 +55,7 @@
  .ct-action-filterbar{grid-template-columns:repeat(2,minmax(0,1fr));}
  .ct-action-filterbar .ct-action-search-label{grid-column:1/-1;}
  .ct-action-filterbar .ct-btn{width:100%;}
- #ctAction .ct-board thead th:nth-child(1),#ctAction .ct-board tbody td:nth-child(1){min-width:65px;}
- #ctAction .ct-board thead th:nth-child(2),#ctAction .ct-board tbody td:nth-child(2){left:65px;min-width:65px;}
- #ctAction .ct-board thead th:nth-child(3),#ctAction .ct-board tbody td:nth-child(3){left:130px;min-width:168px;max-width:168px;}
+ #ctAction .ct-board thead th:first-child,#ctAction .ct-board tbody td:first-child{min-width:190px;max-width:210px;}
 }
 
 /* Retrospective month-scoped action snapshots never write to the live one-key Action Board. */
