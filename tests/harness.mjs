@@ -76,6 +76,12 @@ if(!gas.includes('fixDaejeonManagersInSheets'))fail('Owner-run historical repair
 ok('Apps Script dual-source auth, H validation repair and historical manager repair');
 await import('./gas-regression.mjs');
 
+const workflow=read('srm-workflow.js');
+new Function(workflow);
+if(!html.includes('srm-workflow.js')||!workflow.includes('SRM')||!workflow.includes('srmAppend'))fail('SRM execution panel missing');
+if(!gas.includes("type === 'srmAppend'")||!gas.includes('srmCheckTransition_'))fail('SRM backend and verified X-to-O route missing');
+if(!read('control-tower-patch.js').includes('data-srm-open'))fail('Master Action Board must open SRM case');
+ok('SRM Master workflow panel and event contracts');
 const liveSync=read('action-sync.js');
 if(!liveSync.includes("post({type:'load'})"))fail('Action read must use authenticated POST load');
 if(liveSync.includes("url.searchParams.set('token'"))fail('Secret must not be sent in GET URL');
