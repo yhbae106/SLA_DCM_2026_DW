@@ -74,6 +74,7 @@ if(!masterPatch.includes("card.addEventListener('keydown'")||!masterPatch.includ
 if(!boardCss.includes('.ct-action-filterbar')||!boardCss.includes('.ct-status-badge'))
   fail('Unified Action Board responsive controls/OX styles missing');
 ok('one unified Action Board with three-company statuses, Risk and preserved edit controls');
+await import('./unified-action-render-regression.mjs');
 
 const mockData=[
  {month:'2026-08',outlet:'A',businessNo:'1',businessName:'Alpha',manager:'M',statuses:S('X','O',null)},
