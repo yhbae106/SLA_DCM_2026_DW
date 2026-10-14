@@ -22,23 +22,18 @@
 .ct-action-scoreguide summary{cursor:pointer;font-weight:800;padding:4px 0;}
 .ct-action-scoreguide .ct-score-guide{margin:7px 0 0;}
 #ctAction .ct-board{max-height:min(69vh,720px);overflow:auto;overscroll-behavior:contain;scrollbar-color:#c5d5e8 #f5f9fd;border:1px solid #dde6f0;border-radius:9px;}
-#ctAction .ct-board table{min-width:1580px;border-collapse:separate;border-spacing:0;table-layout:auto;}
+#ctAction .ct-board table{min-width:1430px;border-collapse:separate;border-spacing:0;table-layout:auto;}
 #ctAction .ct-board thead th{position:sticky;top:0;z-index:3;background:#edf3fa;white-space:nowrap;box-shadow:0 1px #d5e1ef;font-size:10.5px;}
 #ctAction .ct-board tbody td{vertical-align:middle;background:#fff;font-size:10.5px;}
 #ctAction .ct-board tbody tr:hover td{background:#f8fbff;}
-#ctAction .ct-board thead th:nth-child(1){left:0;z-index:5;min-width:78px;background:#edf3fa;}
-#ctAction .ct-board tbody td:nth-child(1){position:sticky;left:0;z-index:2;background:#fff;min-width:78px;}
-#ctAction .ct-board thead th:nth-child(2){left:78px;z-index:5;min-width:82px;background:#edf3fa;}
-#ctAction .ct-board tbody td:nth-child(2){position:sticky;left:78px;z-index:2;background:#fff;min-width:82px;}
-#ctAction .ct-board thead th:nth-child(3){left:160px;z-index:5;min-width:210px;background:#edf3fa;border-right:1px solid #dce5ef;}
-#ctAction .ct-board tbody td:nth-child(3){position:sticky;left:160px;z-index:2;background:#fff;min-width:210px;max-width:230px;border-right:1px solid #dce5ef;}
-#ctAction .ct-board tbody tr:hover td:nth-child(-n+3){background:#f8fbff;}
+#ctAction .ct-board thead th:first-child{left:0;z-index:5;min-width:215px;background:#edf3fa;border-right:1px solid #dce5ef;}
+#ctAction .ct-board tbody td:first-child{position:sticky;left:0;z-index:2;min-width:215px;max-width:245px;background:#fff;border-right:1px solid #dce5ef;}
+#ctAction .ct-board tbody tr:hover td:first-child{background:#f8fbff;}
 #ctAction .ct-merchant strong{display:block;white-space:normal;overflow-wrap:anywhere;line-height:1.5;color:#264565;}
 #ctAction .ct-merchant small{display:block;color:#8491a4;font-size:9px;margin-top:3px;font-variant-numeric:tabular-nums;}
 #ctAction .ct-merchant .srm-launch{display:block;margin:5px 0 0!important;}
 #ctAction .ct-ox-cell{text-align:center;min-width:69px;}
-#ctAction .ct-score{text-align:center;font-variant-numeric:tabular-nums;}
-#ctAction .ct-readonly{display:block;padding:6px 2px;color:#6b7d90;font-size:10px;overflow-wrap:anywhere;}
+#ctAction .ct-readonly{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;word-break:break-word;padding:5px 2px;color:#53677c;font-size:10.5px;line-height:1.45;}
 #ctAction .ct-dual-cell{min-width:195px;max-width:250px;vertical-align:top;}
 #ctAction .ct-dual-cell input,#ctAction .ct-dual-cell select{max-width:100%;min-width:0;box-sizing:border-box;}
 #ctAction.ct-action-unified .ct-action-more{display:flex;padding-top:10px;}
@@ -49,7 +44,7 @@
 .ct-quick-nav button[data-jump="ctGroup"]:after{content:'그룹사별 현황';}
 .ct-quick-nav button[data-jump="ctOutlet"]:after{content:'업체별 현황';}
 .ct-quick-nav button[data-jump="ctChanges"]:after{content:'전월 대비 변화';}
-.ct-quick-nav button[data-jump="ctAging"]:after{content:'Aging & Target';}
+.ct-quick-nav button[data-jump="ctAging"]:after{content:'미연동 세부 현황';}
 .ct-quick-nav button[data-jump="ctAction"]:after{content:'통합 Action Board';}
 .ct-quick-nav button[data-jump="ctNeed"]:after{content:'연동 필요 리스트';}
 @media(max-width:1350px){
