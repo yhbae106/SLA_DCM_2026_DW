@@ -6,7 +6,7 @@ const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>'\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]));
 const statusLabel=s=>({TODO:'미조치',IN_PROGRESS:'진행중',WAITING:'업체회신',DONE:'완료'})[s]||'미조치';
 let actionOpen=true,actionLimit=PAGE_SIZE,actionTimer=null,actionView='x',actionEntity='all',actionPriority='all',actionSearch='',activeKpi=null;
-const ACTION_VIEWS={x:'현재 미연동 X 거래처',persist:'2개월 이상 지속 X',all3:'3개사 모두 X',improved:'X→O 개선 거래처',worsened:'O→X 악화 거래처',compared:'전월 대비 비교 거래처',history:'월별 X→O 조치 이력',evaluated:'전체 O/X 평가 거래처',supply:'도도매 공급처 전체'};
+const ACTION_VIEWS={x:'현재 미연동 X 거래처',persist:'2개월 이상 지속 X',all3:'3개사 모두 X',improved:'X→O 개선 거래처',worsened:'O→X 악화 거래처',compared:'전월 대비 비교 거래처',history:'월별 조치 이력',stopped:'7월 공급 중단(관리분류)',evaluated:'전체 O/X 평가 거래처',supply:'도도매 공급처 전체'};
 const KPI_VIEWS={rate:'evaluated',delta:'compared',unlinked:'x',need:'x',persistent:'persist',all3:'all3',improved:'improved',worsened:'worsened',supply:'supply'};
 function ensureHeroKpis(){
   const grid=document.querySelector('.ct-hero .ct-kpis');if(!grid)return;
@@ -134,8 +134,24 @@ function buildBoardContext(){
     reasonCode:base.reasonCode||'',plan:base.plan||'',dueDate:base.dueDate||'',status:base.status||'TODO',
     partnerAction:base.partnerAction||{},canEdit:currentX>0||stored.has(k)};
   const archived=window.DCM_MONTHLY_ACTION_HISTORY?.get(cur,k);
-  if(archived){Object.assign(merged,archived.masterAction,{monthlyHistorical:true,masterAction:{...archived.masterAction},partnerAction:{...archived.partnerAction},canEdit:false});}
+  if(archived){Object.assign(merged,archived.masterAction,{monthlyHistorical:true,historyType:archived.type||'X2O',masterAction:{...archived.masterAction},partnerAction:{...archived.partnerAction},canEdit:false});}
   if(!priorRow||merged.score>=priorRow.score)byKey.set(k,merged);
+ }
+ for(const entry of window.DCM_MONTHLY_ACTION_HISTORY?.forMonth(cur)||[]){
+  if(byKey.has(entry.key))continue;
+  // Archived July records missing in the month’s sales dataset are synthetic,
+  // read-only rows. They must NEVER enter the live Action Board save path.
+  const [outlet,businessNo]=entry.key.split('|||');
+  const previous=prevMap.get(entry.key)||rowHistory.get(entry.key)?.get('2026-06');
+  if($('outlet')?.value!=='전체'&&outlet!==$('outlet')?.value)continue;
+  if($('manager')?.value!=='전체'&&entry.manager!==$('manager')?.value&&previous?.manager!==$('manager')?.value)continue;
+  byKey.set(entry.key,{
+   key:entry.key,outlet,businessNo,businessName:entry.businessName,manager:entry.manager||previous?.manager||'',
+   statuses:{'대웅제약':null,'대웅바이오':null,'한올바이오':null},
+   priority:'P3',score:0,xCount:0,aging:'0M',entityStreak:{},
+   monthlyHistorical:true,historyType:entry.type||'X2O',masterAction:{...entry.masterAction},
+   partnerAction:{...entry.partnerAction},reasonCode:'',plan:'',dueDate:'',status:'',canEdit:false
+  });
  }
  const rows=[...byKey.values()].sort((a,b)=>b.score-a.score||b.xCount-a.xCount||
    String(a.businessName||'').localeCompare(String(b.businessName||''),'ko'));
@@ -156,6 +172,7 @@ function filterUnifiedRows(ctx,view='x',entity='all',priority='all',search=''){
    case 'worsened':ok=scope.some(e=>ctx.worsened.get(key)?.has(e));break;
    case 'compared':ok=scope.some(e=>L.normStatus(current[e])&&L.normStatus(before[e]));break;
    case 'history':ok=!!window.DCM_MONTHLY_ACTION_HISTORY?.get(ctx.month,key)?.entities.some(e=>scope.includes(e));break;
+   case 'stopped':ok=window.DCM_MONTHLY_ACTION_HISTORY?.get(ctx.month,key)?.type==='SUPPLY_STOP'&&!!window.DCM_MONTHLY_ACTION_HISTORY?.get(ctx.month,key)?.entities.some(e=>scope.includes(e));break;
    case 'evaluated':
    case 'supply':ok=scope.some(e=>L.normStatus(current[e]));break;
    default:ok=false;
@@ -172,7 +189,7 @@ function renderAllXActionBoard(){
  const historicalField=(a,field)=>{
     const value=a?.[field]||'';
     if(field==='reasonCode')return value?value+' '+((window.DCM_ACTION_REASONS||{})[value]||''):'—';
-    if(field==='status')return statusLabel(value);
+    if(field==='status')return value?statusLabel(value):'—';
     return value||'—';
   };
   const dual=(r,field)=>'<td class="ct-dual-cell"><div class="ct-master-entry"><b>마스터</b>'+
@@ -186,7 +203,7 @@ function renderAllXActionBoard(){
  tbody.innerHTML=visible.map(r=>'<tr>'+
   '<td><span class="ct-priority ct-'+String(r.priority||'P3').toLowerCase()+'">'+esc(r.priority||'P3')+'</span></td>'+
   '<td class="ct-score"><strong title="현재 미연동 그룹사 '+r.xCount+'건 · Risk 기반 점수">'+(Number(r.score)||0)+'</strong></td>'+
-  '<td class="ct-merchant"><strong>'+esc(r.businessName||'')+'</strong><small>'+esc(r.businessNo||'')+'</small>'+(r.monthlyHistorical?'<small class="ct-monthly-archive" title="DCM O/X 개선 결과 기반 사후 등록 이력">월별 X→O 조치 이력</small>':'')+'<button type="button" class="srm-launch" data-srm-open="'+esc(r.key)+'">SRM 협의</button></td>'+
+  '<td class="ct-merchant"><strong>'+esc(r.businessName||'')+'</strong><small>'+esc(r.businessNo||'')+'</small>'+(r.monthlyHistorical?'<small class="ct-monthly-archive" title="DCM O/X 개선 결과 기반 사후 등록 이력">'+(r.historyType==='SUPPLY_STOP'?'7월 공급 중단(관리분류)':'월별 X→O 조치 이력')+'</small>':'')+'<button type="button" class="srm-launch" data-srm-open="'+esc(r.key)+'">SRM 협의</button></td>'+
   '<td>'+esc(r.outlet||'')+'</td><td>'+esc(r.manager||'')+'</td>'+
   E.map(e=>status(r,e)).join('')+
   '<td>'+esc(r.aging||'0M')+'</td>'+
