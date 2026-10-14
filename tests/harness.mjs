@@ -25,6 +25,7 @@ ok('legacy embedded Partner copy removed');
 function walk(dir='.'){return fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>{const p=path.join(dir,e.name);if(e.name==='.git'||e.name==='node_modules')return[];return e.isDirectory()?walk(p):[p]})}
 for(const file of walk().filter(x=>x.endsWith('.js'))){execFileSync(process.execPath,['--check',file],{stdio:'pipe'});}
 ok('all JavaScript parses');
+await import('./monthly-history-regression.mjs');
 
 const ctx={};ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);vm.runInContext(read('logic.js'),ctx);
 const L=ctx.DCMLogic;if(!L)fail('DCMLogic not exported');
@@ -77,6 +78,7 @@ ok('one unified Action Board with three-company statuses, Risk and preserved edi
 await import('./unified-action-render-regression.mjs');
 
 const mockData=[
+ {month:'2026-06',outlet:'A',businessNo:'s',businessName:'Stop June X',manager:'M',statuses:S('X',null,null)},
  {month:'2026-08',outlet:'A',businessNo:'1',businessName:'Alpha',manager:'M',statuses:S('X','O',null)},
  {month:'2026-08',outlet:'A',businessNo:'2',businessName:'Beta',manager:'M',statuses:S('X','X','X')},
  {month:'2026-08',outlet:'A',businessNo:'3',businessName:'Gamma',manager:'M',statuses:S('X',null,null)},
@@ -95,10 +97,22 @@ const uiEnv={DCMLogic:L,DCM_BASE_DATA:mockData,
  ]}};
 uiEnv.window=uiEnv;uiEnv.globalThis=uiEnv;
 vm.createContext(uiEnv);
+vm.runInContext(read('data/monthly-action-history.js'),uiEnv);
 vm.runInContext(masterPatch,uiEnv);
 const board=uiEnv.DCMUnifiedAction;
 if(!board)fail('Master unified list selection module missing');
 const context=board.build();
+const archived=uiEnv.DCM_MONTHLY_ACTION_HISTORY.get('2026-09','A|||3');
+if(!archived||archived.masterAction.status!=='DONE'||archived.partnerAction.status!=='DONE')
+  fail('Master July/Aug/Sept historical X→O completion projection failed');
+const monthlyRow=context.rows.find(r=>r.key==='A|||3');
+if(!monthlyRow?.monthlyHistorical||monthlyRow.canEdit!==false||
+ monthlyRow.masterAction.plan!=='ERP업체 소통하여 정상 연동 조치'||
+ monthlyRow.partnerAction.plan!=='거래처 요청 및 대웅 협조')
+  fail('Master historical view did not preserve separate read-only plans');
+if(board.filter(context,'history').map(r=>r.businessNo).join(',')!=='3')fail('Master monthly history filter must show O-only converted transaction');
+ok('Master month-specific completed action appears read-only in unified board');
+
 const ids=(view,entity='all',priority='all',q='')=>board.filter(context,view,entity,priority,q).map(x=>x.businessNo).sort().join(',');
 if(ids('x')!=='1,2')fail('X filter excludes/include wrong records');
 if(ids('persist')!=='2'||ids('all3')!=='2')fail('Persistent/3-company X result invalid');
@@ -111,6 +125,25 @@ if(ids('x','all','P1')!=='2')fail('Risk Priority filter failed');
 if(ids('evaluated','all','all','Gamma')!=='3'||ids('x','all','all','impossible')!=='')fail('Search filter failed');
 if(context.rows.length!==4)fail('Unique retailer deduplication lost');
 ok('unified Board KPI, persistent X, all3, X-to-O, O-to-X, company, priority and search filters');
+const oldFind=uiEnv.document.getElementById;
+uiEnv.document.getElementById=id=>{
+  if(id==='month')return {value:'2026-07'};
+  return oldFind(id);
+};
+const julyStop=board.build();
+if(julyStop.rows.length!==1)fail('Master July must project missing-sales June-X merchant into history');
+const only=board.filter(julyStop,'stopped');
+if(only.length!==1||only[0].key!=='A|||s')fail('Master stopped filter missing July no-sales merchant');
+if(only[0].partnerAction.reasonCode!=='04'||
+ only[0].partnerAction.plan!=='공급 중단'||
+ only[0].partnerAction.dueDate!=='2026-07-31'||
+ only[0].partnerAction.status!=='DONE')
+  fail('Master did not surface independent Partner stop closure');
+if(only[0].masterAction.plan||only[0].masterAction.reasonCode||only[0].canEdit!==false)
+  fail('Partner-only July closure must not manufacture Master actions');
+uiEnv.document.getElementById=oldFind;
+ok('Master July missing-sales synthetic Partner 04 DONE record and unchanged master fields');
+
 
 vm.runInContext(read('data/base-data.js'),ctx);
 const daejeon=ctx.DCM_BASE_DATA.filter(r=>r.outlet==='백제약품 대전');
