@@ -56,6 +56,7 @@ const ss={getSheetByName:n=>sheets.get(n)||null,insertSheet:n=>{const x=new Mock
 for(let i=2;i<=140;i++)sheet.rules.set(i+':8',{options:defaults.map(x=>x.join(' ')),allowInvalid:false});
 sheet.rules.set('110:8',{options:[...defaults.map(x=>x.join(' ')),'08 도매몰 미연동'],allowInvalid:false,
   getAllowInvalid(){return false;},getCriteriaValues(){return [this.options,true];}});
+const scriptProps=new Map();
 const context={
   SpreadsheetApp:{openById:()=>ss,newDataValidation:()=>{
     const object={options:[],allowInvalid:false,helpText:''};
@@ -66,7 +67,7 @@ const context={
   Utilities:{getUuid:()=>String(Math.random()),formatDate:()=>new Date('2026-10-08T10:00:00Z').toISOString(),
     base64EncodeWebSafe:v=>Buffer.from(v).toString('base64url'),Charset:{UTF_8:'utf8'}},
   LockService:{getScriptLock:()=>({waitLock(){},tryLock(){return true;},releaseLock(){}})},
-  PropertiesService:{getScriptProperties:()=>({getProperty:()=>null})},
+  PropertiesService:{getScriptProperties:()=>({getProperty:key=>scriptProps.get(key)||null,setProperty:(key,value)=>scriptProps.set(key,value)})},
   ContentService:{MimeType:{JSON:'json'},createTextOutput:x=>({setMimeType(){return x;}})},
   console
 };
@@ -218,4 +219,36 @@ const verified=call('appendSrmEvent_',{
 if(!verified.saved||verified.result!=='X→O 확인')fail('Observed X-to-O transition not accepted');
 if(call('loadSrmEvents_','').events.length!==2)fail('SRM append-only history incomplete');
 ok('SRM append-only events, partner boundaries, idempotent retry and evidence-backed X-to-O verification');
+
+scriptProps.set('DCM_EDITOR_PIN_BAE','bae-secret-1234');
+scriptProps.set('DCM_EDITOR_PIN_JEONG','jeong-secret-1234');
+scriptProps.set('DCM_EDITOR_PIN_LIM','lim-secret-1234');
+scriptProps.set('DCM_MASTER_PASSWORD','master-only-test');
+dashboard.rows.push(
+ ['2026-09','기타 대리점','배영훈','B','Owner B','X','','',''],
+ ['2026-09','기타 대리점','임인숙','L','Owner L','X','','','']
+);
+const edits=[
+ {key:'백제약품 대전|||31'}, {key:'기타 대리점|||B'}, {key:'기타 대리점|||L'}
+];
+call('assertActionEditorAccess_','배영훈','bae-secret-1234',edits);
+call('assertActionEditorAccess_','배영훈','',edits,'master-only-test');
+call('assertActionEditorAccess_','정직한','jeong-secret-1234',[edits[0]]);
+call('assertActionEditorAccess_','임인숙','lim-secret-1234',[edits[2]]);
+const accessMustFail=(editor,pin,list,masterPassword)=>{
+ let blocked=false;
+ try{call('assertActionEditorAccess_',editor,pin,list,masterPassword);}catch(_){blocked=true;}
+ if(!blocked)fail('Master Sync unauthorized write allowed for '+editor+'/'+list.map(x=>x.key).join(','));
+};
+accessMustFail('정직한','jeong-secret-1234',[edits[1]]);
+accessMustFail('임인숙','lim-secret-1234',[edits[0]]);
+accessMustFail('정직한','',[edits[0]]);
+accessMustFail('정직한','invalid-pin',[edits[0]]);
+accessMustFail('정직한','',[edits[0]],'master-only-test');
+accessMustFail('배영훈','',[edits[0]]);
+accessMustFail('배영훈','bae-secret-1234',[{key:'임의 권역|||없는 번호'}]);
+if(!script.includes("if(mode==='edit')assertActionEditorAccess_"))
+ fail('Action edit route no longer enforces per-user ownership');
+ok('Master Sync server permissions: Bae full access, Jeong/Lim own only, PIN and master auth, no unknown merchant');
+
 console.log('GAS_REGRESSION_OK');
