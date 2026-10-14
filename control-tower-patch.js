@@ -6,8 +6,8 @@ const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>'\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]));
 const statusLabel=s=>({TODO:'미조치',IN_PROGRESS:'진행중',WAITING:'업체회신',DONE:'완료'})[s]||'미조치';
 let actionOpen=true,actionLimit=PAGE_SIZE,actionTimer=null,actionView='x',actionEntity='all',actionPriority='all',actionSearch='',activeKpi=null;
-const ACTION_VIEWS={x:'현재 미연동 X 거래처',persist:'2개월 이상 지속 X',all3:'3개사 모두 X',improved:'X→O 개선 거래처',worsened:'O→X 악화 거래처',compared:'전월 대비 비교 거래처',history:'월별 조치 이력',stopped:'7월 공급 중단(관리분류)',evaluated:'전체 O/X 평가 거래처',supply:'도도매 공급처 전체'};
-const KPI_VIEWS={rate:'evaluated',delta:'compared',unlinked:'x',need:'x',persistent:'persist',all3:'all3',improved:'improved',worsened:'worsened',supply:'supply'};
+const ACTION_VIEWS={x:'현재 미연동 X 거래처',persist:'2개월 이상 지속 X',all3:'3개사 모두 X',improved:'X→O 개선 거래처',worsened:'O→X 악화 거래처',new:'선택월 신규 도도매',stopped:'선택월 중단 도도매',history:'월별 조치 이력',supply:'도도매 공급처 전체'};
+const KPI_VIEWS={rate:'supply',unlinked:'x',need:'x',persistent:'persist',all3:'all3',improved:'improved',worsened:'worsened',supply:'supply'};
 function ensureHeroKpis(){
   const grid=document.querySelector('.ct-hero .ct-kpis');if(!grid)return;
   const rate=$('ctRate')?.closest('.ct-kpi'),delta=$('ctDelta')?.closest('.ct-kpi'),x=$('ctX')?.closest('.ct-kpi'),x2o=$('ctX2O')?.closest('.ct-kpi'),o2x=$('ctO2X')?.closest('.ct-kpi'),persist=$('ctPersist')?.closest('.ct-kpi'),all3=$('ctAll3')?.closest('.ct-kpi');
@@ -120,6 +120,8 @@ function buildBoardContext(){
  const stored=new Map(localActions().map(a=>[a.key,a]));
  const prevMap=new Map(prior.map(r=>[r.outlet+'|||'+r.businessNo,r]));
  const improved=new Map(),worsened=new Map();
+ const newSupply=new Map(),stoppedSupply=new Map();
+ for(const [dest,list] of [[newSupply,changes.newSupply||[]],[stoppedSupply,changes.stoppedSupply||[]]])for(const item of list){dest.set(item.outlet+'|||'+item.businessNo,new Set((item.entities||[]).map(x=>x.entity)));}
  for(const [map,list] of [[improved,changes.xToO||[]],[worsened,changes.oToX||[]]]){
   list.forEach(item=>{const k=item.outlet+'|||'+item.businessNo;if(!map.has(k))map.set(k,new Set());map.get(k).add(item.entity);});
  }
@@ -162,9 +164,18 @@ function buildBoardContext(){
    partnerAction:{...entry.partnerAction},reasonCode:'',plan:'',dueDate:'',status:'',canEdit:false
   });
  }
+ for(const item of changes.stoppedSupply||[]){
+  const k=item.outlet+'|||'+item.businessNo;
+  if(byKey.has(k))continue;
+  const previous=prevMap.get(k);
+  byKey.set(k,{...previous,key:k,outlet:item.outlet,businessNo:item.businessNo,
+   businessName:item.businessName||previous?.businessName||'',manager:item.manager||previous?.manager||'',
+   priority:'P3',score:0,xCount:0,aging:'0M',entityStreak:{},
+   statuses:{},reasonCode:'',plan:'',dueDate:'',status:'',partnerAction:{},canEdit:false,stoppedSupply:true});
+ }
  const rows=[...byKey.values()].sort((a,b)=>b.score-a.score||b.xCount-a.xCount||
    String(a.businessName||'').localeCompare(String(b.businessName||''),'ko'));
- return {rows,improved,worsened,prevMap,month:cur};
+ return {rows,improved,worsened,newSupply,stoppedSupply,prevMap,month:cur};
 }
 function filterUnifiedRows(ctx,view='x',entity='all',priority='all',search=''){
  const L=window.DCMLogic||{},E=L.E||[],scope=entity==='all'?E:[entity];
@@ -179,10 +190,9 @@ function filterUnifiedRows(ctx,view='x',entity='all',priority='all',search=''){
    case 'all3':ok=E.every(e=>L.normStatus(current[e])==='X');break;
    case 'improved':ok=scope.some(e=>ctx.improved.get(key)?.has(e));break;
    case 'worsened':ok=scope.some(e=>ctx.worsened.get(key)?.has(e));break;
-   case 'compared':ok=scope.some(e=>L.normStatus(current[e])&&L.normStatus(before[e]));break;
+   case 'new':ok=scope.some(e=>ctx.newSupply?.get(key)?.has(e));break;
    case 'history':ok=!!window.DCM_MONTHLY_ACTION_HISTORY?.get(ctx.month,key)?.entities.some(e=>scope.includes(e));break;
-   case 'stopped':ok=window.DCM_MONTHLY_ACTION_HISTORY?.get(ctx.month,key)?.type==='SUPPLY_STOP'&&!!window.DCM_MONTHLY_ACTION_HISTORY?.get(ctx.month,key)?.entities.some(e=>scope.includes(e));break;
-   case 'evaluated':
+   case 'stopped':ok=scope.some(e=>ctx.stoppedSupply?.get(key)?.has(e));break;
    case 'supply':ok=scope.some(e=>L.normStatus(current[e]));break;
    default:ok=false;
   }
