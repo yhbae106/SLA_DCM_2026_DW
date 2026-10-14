@@ -11,6 +11,7 @@ class MockSheet {
   getMaxRows(){return 1000;}
   insertColumnsAfter(col,count){this.columns+=count;}
   hideSheet(){}
+  setFrozenRows(){}
   clearContents(){this.rows=[];}
   appendRow(row){this.getRange(this.getLastRow()+1,1,1,row.length).setValues([row]);}
   getRange(start,col,n=1,w=1){
@@ -51,7 +52,7 @@ const cfg=new MockSheet('Config',[['code','label'],...defaults],2);
 const history=new MockSheet('History',[['eventId','key','업체/권역','사업자번호','실사업자명','담당자','변경필드','이전값','변경값','수정자','수정시간']],11);
 const dashboard=new MockSheet('Dashboard Data',[['month','outlet','manager','businessNo','businessName','대웅제약','대웅바이오','한올바이오','savedAt'],['2026-09','백제약품 대전','정직한','31','도도매 31','X','X','','']],9);
 const sheets=new Map([['Action Board',sheet],['Config',cfg],['History',history],['Dashboard Data',dashboard]]);
-const ss={getSheetByName:n=>sheets.get(n)||null,insertSheet:n=>{const x=new MockSheet(n);sheets.set(n,x);return x;}};
+const ss={getSheetByName:n=>sheets.get(n)||null,insertSheet:n=>{const x=new MockSheet(n,[],21);sheets.set(n,x);return x;}};
 for(let i=2;i<=140;i++)sheet.rules.set(i+':8',{options:defaults.map(x=>x.join(' ')),allowInvalid:false});
 sheet.rules.set('110:8',{options:[...defaults.map(x=>x.join(' ')),'08 도매몰 미연동'],allowInvalid:false,
   getAllowInvalid(){return false;},getCriteriaValues(){return [this.options,true];}});
@@ -64,7 +65,7 @@ const context={
   },flush(){}},
   Utilities:{getUuid:()=>String(Math.random()),formatDate:()=>new Date('2026-10-08T10:00:00Z').toISOString(),
     base64EncodeWebSafe:v=>Buffer.from(v).toString('base64url'),Charset:{UTF_8:'utf8'}},
-  LockService:{getScriptLock:()=>({waitLock(){},releaseLock(){}})},
+  LockService:{getScriptLock:()=>({waitLock(){},tryLock(){return true;},releaseLock(){}})},
   PropertiesService:{getScriptProperties:()=>({getProperty:()=>null})},
   ContentService:{MimeType:{JSON:'json'},createTextOutput:x=>({setMimeType(){return x;}})},
   console
@@ -176,4 +177,45 @@ try{
 if(!duplicateDashboardBlocked||JSON.stringify(dashboard.rows)!==dashboardBefore)
   fail('Duplicate monthly dashboard upload overwrote existing data');
 ok('Dashboard duplicate-month key rejected before clearing original data');
+
+const srmRowCountBefore=sheet.getLastRow();
+const firstSrm=call('appendSrmEvent_',{
+ key:'백제약품 대전|||31',entity:'대웅바이오',eventType:'CONTACT',
+ status:'ERP_WAIT',reason:'03',contactTarget:'ERP 업체',erpVendor:'테스트 ERP',
+ detail:'전산 연동 점검 협의',nextAction:'재시험',owner:'정직한',dueDate:'2026-10-20',
+ baselineMonth:'2026-06',requestId:'srm-test-unique-001'
+},'partner','백제약품');
+if(!firstSrm.saved)fail('SRM append failed');
+if(sheet.getLastRow()!==srmRowCountBefore)fail('SRM event wrote Action Board');
+const srmSheet=sheets.get('SRM Events');
+if(!srmSheet||srmSheet.getLastRow()!==2)fail('Append-only SRM sheet not created');
+const retry=call('appendSrmEvent_',{
+ key:'백제약품 대전|||31',entity:'대웅바이오',eventType:'CONTACT',
+ status:'ERP_WAIT',detail:'retry',requestId:'srm-test-unique-001'
+},'partner','백제약품');
+if(!retry.duplicate||srmSheet.getLastRow()!==2)fail('SRM idempotent retry generated duplicate row');
+let foreignBlocked=false;
+try{call('appendSrmEvent_',{
+ key:'백제약품 대전|||31',entity:'대웅바이오',eventType:'CONTACT',
+ status:'OPEN',detail:'unauthorized',requestId:'srm-test-unique-002'
+},'partner','인천약품');}catch(_){foreignBlocked=true;}
+if(!foreignBlocked)fail('Partner cross-tenant event append allowed');
+const partnerRead=call('loadSrmEvents_','백제약품');
+if(partnerRead.events.length!==1||call('loadSrmEvents_','인천약품').events.length!==0)
+ fail('SRM partner read leaked another partner’s events');
+let falseVerifiedBlocked=false;
+try{call('appendSrmEvent_',{
+ key:'백제약품 대전|||31',entity:'대웅제약',eventType:'VERIFICATION',
+ status:'VERIFIED',detail:'manual complete',baselineMonth:'2026-06',requestId:'srm-test-unique-003'
+},'master','');}catch(e){falseVerifiedBlocked=/검증 실패/.test(e.message);}
+if(!falseVerifiedBlocked)fail('SRM verified without historical X to current O');
+dashboard.rows.push(['2026-06','백제약품 대전','정직한','31','도도매 31','X','X','X','']);
+dashboard.rows[1][5]='O';
+const verified=call('appendSrmEvent_',{
+ key:'백제약품 대전|||31',entity:'대웅제약',eventType:'VERIFICATION',
+ status:'VERIFIED',detail:'X→O 전환 확인',baselineMonth:'2026-06',requestId:'srm-test-unique-004'
+},'master','');
+if(!verified.saved||verified.result!=='X→O 확인')fail('Observed X-to-O transition not accepted');
+if(call('loadSrmEvents_','').events.length!==2)fail('SRM append-only history incomplete');
+ok('SRM append-only events, partner boundaries, idempotent retry and evidence-backed X-to-O verification');
 console.log('GAS_REGRESSION_OK');
