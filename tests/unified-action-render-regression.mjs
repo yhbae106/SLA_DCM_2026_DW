@@ -44,7 +44,7 @@ const localStorage={getItem(k){
  return null;
 }};
 const sandbox={console,localStorage,DCM_BASE_DATA:data,DCM_ACTION_REASONS:{'03':'전산/데이터 오류'},
- DCM_CONFIG:{},DCMActionSync:{allRisk:()=>risks},
+ DCM_CONFIG:{},DCMActionSync:{allRisk:()=>risks,canEditFor:manager=>manager==='검증 담당자'},
  document:{getElementById:id=>dom.has(id)||['ctActionBody','ctActionCount','ctActionShown','ctActionMore','ctActionAll','ctActionViewName'].includes(id)?el(id):null,
    querySelectorAll:()=>[]},
  addEventListener:(name,fn)=>{const a=listeners.get(name)||[];a.push(fn);listeners.set(name,a);},
