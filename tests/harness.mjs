@@ -26,6 +26,7 @@ function walk(dir='.'){return fs.readdirSync(dir,{withFileTypes:true}).flatMap(e
 for(const file of walk().filter(x=>x.endsWith('.js'))){execFileSync(process.execPath,['--check',file],{stdio:'pipe'});}
 ok('all JavaScript parses');
 await import('./monthly-history-regression.mjs');
+await import('./srm-metrics-regression.mjs');
 
 const ctx={};ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);vm.runInContext(read('logic.js'),ctx);
 const L=ctx.DCMLogic;if(!L)fail('DCMLogic not exported');
@@ -79,6 +80,7 @@ await import('./unified-action-render-regression.mjs');
 
 const mockData=[
  {month:'2026-06',outlet:'A',businessNo:'s',businessName:'Stop June X',manager:'M',statuses:S('X',null,null)},
+ {month:'2026-07',outlet:'A',businessNo:'z',businessName:'July supplier',manager:'M',statuses:S('O',null,null)},
  {month:'2026-08',outlet:'A',businessNo:'1',businessName:'Alpha',manager:'M',statuses:S('X','O',null)},
  {month:'2026-08',outlet:'A',businessNo:'2',businessName:'Beta',manager:'M',statuses:S('X','X','X')},
  {month:'2026-08',outlet:'A',businessNo:'3',businessName:'Gamma',manager:'M',statuses:S('X',null,null)},
@@ -91,7 +93,7 @@ const mockData=[
 const uiEnv={DCMLogic:L,DCM_BASE_DATA:mockData,
  localStorage:{getItem:key=>key==='dcm-dashboard-v8-data'?JSON.stringify(mockData):'[]'},
  document:{getElementById:id=>({manager:'전체',outlet:'전체',month:'2026-09'})[id]?{value:({manager:'전체',outlet:'전체',month:'2026-09'})[id]}:null},
- addEventListener(){},DCMActionSync:{allRisk:()=>[
+ addEventListener(){},DCMActionSync:{canEditFor:manager=>manager==='M',allRisk:()=>[
   {key:'A|||1',outlet:'A',businessNo:'1',score:8,xCount:1,priority:'P2'},
   {key:'A|||2',outlet:'A',businessNo:'2',score:15,xCount:3,priority:'P1'}
  ]}};
@@ -118,11 +120,11 @@ if(ids('x')!=='1,2')fail('X filter excludes/include wrong records');
 if(ids('persist')!=='2'||ids('all3')!=='2')fail('Persistent/3-company X result invalid');
 if(ids('improved')!=='1,3')fail('X→O must include O-only improvement');
 if(ids('worsened')!=='1')fail('O→X filter mismatch');
-if(ids('evaluated')!=='1,2,3,4'||ids('supply')!=='1,2,3,4')fail('Evaluated O-only merchants lost');
-if(ids('compared')!=='1,2,3,4')fail('Compared merchant mapping failed');
+if(ids('supply')!=='1,2,3,4')fail('All supplied merchants must include O-only records');
+if(ids('new')!==''||ids('stopped')!=='')fail('No new/stopped supply in same-merchant fixture');
 if(ids('x','대웅제약')!=='2'||ids('x','대웅바이오')!=='1,2')fail('Company selection failed');
 if(ids('x','all','P1')!=='2')fail('Risk Priority filter failed');
-if(ids('evaluated','all','all','Gamma')!=='3'||ids('x','all','all','impossible')!=='')fail('Search filter failed');
+if(ids('supply','all','all','Gamma')!=='3'||ids('x','all','all','impossible')!=='')fail('Search filter failed');
 if(context.rows.length!==4)fail('Unique retailer deduplication lost');
 ok('unified Board KPI, persistent X, all3, X-to-O, O-to-X, company, priority and search filters');
 const oldFind=uiEnv.document.getElementById;
@@ -131,7 +133,7 @@ uiEnv.document.getElementById=id=>{
   return oldFind(id);
 };
 const julyStop=board.build();
-if(julyStop.rows.length!==1)fail('Master July must project missing-sales June-X merchant into history');
+if(!julyStop.rows.some(r=>r.key==='A|||s'))fail('Master July must project missing-sales June-X merchant into history');
 const only=board.filter(julyStop,'stopped');
 if(only.length!==1||only[0].key!=='A|||s')fail('Master stopped filter missing July no-sales merchant');
 if(only[0].partnerAction.reasonCode!=='04'||

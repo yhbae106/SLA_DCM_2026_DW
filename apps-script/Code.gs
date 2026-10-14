@@ -77,7 +77,12 @@ function doPost(e) {
       return json_({ok:true,...withActionLock_(function(){return repairActionReasonValidation();})});
     }
     if (body.type !== 'save') throw new Error('지원하지 않는 요청입니다.');
-    const result = withActionLock_(function(){return saveActions_(Array.isArray(body.actions) ? body.actions : [], body.editor || '', body.mode || 'edit');});
+    const incomingActions=Array.isArray(body.actions)?body.actions:[];
+    const mode=String(body.mode||'edit');
+    const result=withActionLock_(function(){
+      if(mode==='edit')assertActionEditorAccess_(body.editor,body.editorPin,incomingActions,body.masterPassword);
+      return saveActions_(incomingActions,body.editor||'',mode);
+    });
     return json_({ok:true, ...result});
   } catch (err) {
     return json_({ok:false, error:String(err && err.message || err)});
@@ -140,6 +145,67 @@ function assertMasterPassword_(password) {
   const expected = PropertiesService.getScriptProperties().getProperty('DCM_MASTER_PASSWORD');
   if (!expected) throw new Error('Apps Script의 DCM_MASTER_PASSWORD가 설정되지 않았습니다.');
   if (!password || password !== expected) throw new Error('마스터 비밀번호가 올바르지 않습니다.');
+}
+
+
+/* Named editor authorization for shared Sync writes. The shared Sync key grants
+ * read/snapshot access, NOT the authority to impersonate another editor.
+ * Configure Script Properties: DCM_EDITOR_PIN_BAE, DCM_EDITOR_PIN_JEONG, DCM_EDITOR_PIN_LIM.
+ */
+const DCM_EDITOR_PIN_PROPERTIES={'배영훈':'DCM_EDITOR_PIN_BAE','정직한':'DCM_EDITOR_PIN_JEONG','임인숙':'DCM_EDITOR_PIN_LIM'};
+function setNamedEditorPin() {
+  // Run manually by the authorized Apps Script administrator.
+  const ui=SpreadsheetApp.getUi();
+  const who=ui.prompt('공용 Sync 개인 수정 PIN 설정',
+    '설정할 담당자명을 입력하세요: 배영훈 / 정직한 / 임인숙',ui.ButtonSet.OK_CANCEL);
+  if(who.getSelectedButton()!==ui.Button.OK)return;
+  const editor=String(who.getResponseText()||'').trim();
+  const key=DCM_EDITOR_PIN_PROPERTIES[editor];
+  if(!key)throw new Error('배영훈, 정직한, 임인숙 중 선택해야 합니다.');
+  const answer=ui.prompt(editor+' 개인 수정 PIN',
+    '본인만 아는 8자리 이상의 수정 PIN을 입력하세요. 공유키와 다른 값을 사용하세요.',
+    ui.ButtonSet.OK_CANCEL);
+  if(answer.getSelectedButton()!==ui.Button.OK)return;
+  const pin=String(answer.getResponseText()||'').trim();
+  if(pin.length<8)throw new Error('수정 PIN은 8자리 이상이어야 합니다.');
+  PropertiesService.getScriptProperties().setProperty(key,pin);
+  ui.alert(editor+' 개인 PIN이 저장되었습니다. PIN은 팀 공용 채팅에 공유하지 마세요.');
+}
+function assertNamedEditorPin_(editor,pin){
+  const name=String(editor||'').trim(),property=DCM_EDITOR_PIN_PROPERTIES[name];
+  if(!property)throw new Error('등록되지 않은 공용 Sync 수정자입니다.');
+  const expected=PropertiesService.getScriptProperties().getProperty(property);
+  if(!expected||expected.length<6)throw new Error(name+' 수정 PIN 미설정: 관리자가 Apps Script 속성을 설정해야 합니다.');
+  if(String(pin||'')!==String(expected))throw new Error(name+' 수정 PIN 인증에 실패했습니다.');
+  return name;
+}
+function getAuthoritativeActionManagers_(keys){
+  const allowed=new Set(keys),out=new Map(),dates=new Map();
+  const sh=SpreadsheetApp.openById(DCM_SPREADSHEET_ID).getSheetByName(DCM_DATA_SHEET);
+  if(!sh||sh.getLastRow()<2)throw new Error('담당자 검증용 DCM 원자료가 없습니다.');
+  const values=sh.getRange(2,1,sh.getLastRow()-1,4).getDisplayValues();
+  for(const row of values){
+    const key=String(row[1]||'')+'|||'+String(row[3]||'');
+    if(!allowed.has(key))continue;
+    const month=String(row[0]||''),manager=canonicalManager_(row[1],row[2]);
+    if(!out.has(key)||month>dates.get(key)){out.set(key,manager);dates.set(key,month);}
+  }
+  return out;
+}
+function assertActionEditorAccess_(editor,pin,actions,masterPassword){
+  const name=String(editor||'').trim();
+  if(name==='배영훈'&&masterPassword)assertMasterPassword_(masterPassword);
+  else assertNamedEditorPin_(name,pin);
+  const keys=[...new Set((actions||[]).map(a=>String(a?.key||'')))];
+  if(!keys.length)return;
+  const managers=getAuthoritativeActionManagers_(keys);
+  keys.forEach(key=>{
+    const owner=managers.get(key);
+    if(!owner||!Object.prototype.hasOwnProperty.call(DCM_EDITOR_PIN_PROPERTIES,owner))
+      throw new Error('원자료의 담당자가 확인되지 않거나 편집 허용 담당자가 아닙니다: '+key);
+    if(name!=='배영훈'&&name!==owner)
+      throw new Error('편집 권한 없음: '+name+' 담당 거래처만 수정할 수 있습니다 ('+key+').');
+  });
 }
 
 function normalizePartner_(partner) {
