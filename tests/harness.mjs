@@ -92,7 +92,7 @@ const mockData=[
 const uiEnv={DCMLogic:L,DCM_BASE_DATA:mockData,
  localStorage:{getItem:key=>key==='dcm-dashboard-v8-data'?JSON.stringify(mockData):'[]'},
  document:{getElementById:id=>({manager:'전체',outlet:'전체',month:'2026-09'})[id]?{value:({manager:'전체',outlet:'전체',month:'2026-09'})[id]}:null},
- addEventListener(){},DCMActionSync:{allRisk:()=>[
+ addEventListener(){},DCMActionSync:{canEditFor:manager=>manager==='M',allRisk:()=>[
   {key:'A|||1',outlet:'A',businessNo:'1',score:8,xCount:1,priority:'P2'},
   {key:'A|||2',outlet:'A',businessNo:'2',score:15,xCount:3,priority:'P1'}
  ]}};
