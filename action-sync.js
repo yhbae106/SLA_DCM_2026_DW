@@ -275,5 +275,5 @@ function start(){
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastPullAt>poll)pullRemote(false);});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(start,100),{once:true});else setTimeout(start,100);
-window.DCMActionSync={pull:()=>pullRemote(true),repair:()=>pullRemote(true,true),push:()=>flushPendingEdits(),pushRisk:()=>pushRiskSnapshot(true),allRisk:()=>allRiskRows(),reasons:REASONS};
+window.DCMActionSync={pull:()=>pullRemote(true),repair:()=>pullRemote(true,true),push:()=>flushPendingEdits(),pushRisk:()=>pushRiskSnapshot(true),allRisk:()=>allRiskRows(),srmRows:()=>getData(),srmRequest:payload=>post(payload),reasons:REASONS};
 })();
