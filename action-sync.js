@@ -19,6 +19,15 @@ const esc=v=>String(v??'').replace(/[&<>'\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'
 function endpoint(){return String(CFG.endpoint||'').trim();}
 function token(){return localStorage.getItem(TOKEN_KEY)||'';}
 function editor(){return localStorage.getItem(EDITOR_KEY)||CFG.editors?.[0]||'';}
+const EDITOR_PIN_SESSION='dcm-sync-editor-pin-session';
+const SYNC_EDITOR_NAMES=['배영훈','정직한','임인숙'];
+function editorPin(){return sessionStorage.getItem(EDITOR_PIN_SESSION)||'';}
+function canEditFor(manager){
+ const user=editor(),owner=String(manager||'').trim();
+ return !!token()&&!!editorPin()&&SYNC_EDITOR_NAMES.includes(owner)&&
+   (user==='배영훈'||user===owner);
+}
+function updateEditAccess(){window.dispatchEvent(new CustomEvent('dcm-sync-access-changed',{detail:{editor:editor(),hasPin:!!editorPin()}}));}
 function hash(v){try{return JSON.stringify(v||[]);}catch(e){return ''}}
 function getLocalActions(){try{const x=JSON.parse(localStorage.getItem(ACTION_KEY));return Array.isArray(x)?x:[];}catch(e){return []}}
 function migrateRetiredReason08(){
@@ -51,11 +60,21 @@ function installUI(){
  const head=board.querySelector('.section-head');if(!head)return;
  const wrap=document.createElement('div');wrap.id='ctSyncBar';wrap.className='ct-sync-bar';
  const opts=(CFG.editors||[]).map(x=>`<option ${x===editor()?'selected':''}>${esc(x)}</option>`).join('');
- wrap.innerHTML=`<span class="ct-sync-dot"></span><strong>공용 Sync</strong><select id="ctSyncEditor" title="수정자">${opts}</select><input id="ctSyncKey" type="password" autocomplete="off" placeholder="공유키" value="${esc(token())}"><button class="ct-btn" id="ctSyncConnect">동기화</button><button class="ct-btn" id="ctReasonRepair" title="Google Sheet의 Action Board H열 규칙을 점검·복구합니다">H열 규칙 복구</button><span id="ctSyncStatus" class="ct-sync-status idle">연결 전</span><small id="ctSyncMeta"></small>`;
+ wrap.innerHTML=`<span class="ct-sync-dot"></span><strong>공용 Sync</strong><select id="ctSyncEditor" title="수정자">${opts}</select><input id="ctSyncKey" type="password" autocomplete="off" placeholder="공유키" value="${esc(token())}"><input id="ctSyncEditorPin" type="password" autocomplete="off" placeholder="본인 수정 PIN" title="담당자별 수정 PIN(마스터 편집권한 확인)" value=""><button class="ct-btn" id="ctSyncConnect">동기화</button><button class="ct-btn" id="ctReasonRepair" title="Google Sheet의 Action Board H열 규칙을 점검·복구합니다">H열 규칙 복구</button><span id="ctSyncStatus" class="ct-sync-status idle">연결 전</span><small id="ctSyncMeta"></small>`;
  head.appendChild(wrap);
- $('ctSyncEditor')?.addEventListener('change',e=>localStorage.setItem(EDITOR_KEY,e.target.value));
+ $('ctSyncEditor')?.addEventListener('change',e=>{
+   localStorage.setItem(EDITOR_KEY,e.target.value);sessionStorage.removeItem(EDITOR_PIN_SESSION);
+   if($('ctSyncEditorPin'))$('ctSyncEditorPin').value='';
+   updateEditAccess();
+ });
+ $('ctSyncEditorPin')?.addEventListener('input',e=>{
+   const pin=e.target.value.trim();
+   if(pin)sessionStorage.setItem(EDITOR_PIN_SESSION,pin);
+   else sessionStorage.removeItem(EDITOR_PIN_SESSION);
+   updateEditAccess();
+ });
  $('ctSyncKey')?.addEventListener('change',e=>localStorage.setItem(TOKEN_KEY,e.target.value.trim()));
- $('ctSyncConnect')?.addEventListener('click',async()=>{syncBroken=false;serverReady=false;localStorage.setItem(TOKEN_KEY,$('ctSyncKey')?.value.trim()||'');const ok=await pullRemote(true);if(ok)scheduleRiskSnapshot(250,true);});
+ $('ctSyncConnect')?.addEventListener('click',async()=>{syncBroken=false;serverReady=false;localStorage.setItem(TOKEN_KEY,$('ctSyncKey')?.value.trim()||'');const ok=await pullRemote(true);if(ok)scheduleRiskSnapshot(250,true);updateEditAccess();});
  $('ctReasonRepair')?.addEventListener('click',async()=>{
    if(repairing)return;
    localStorage.setItem(TOKEN_KEY,$('ctSyncKey')?.value.trim()||'');
@@ -176,7 +195,10 @@ async function flushPendingEdits(){
  try{
    setStatus('저장 대기 '+items.length+'건 전송 중…','working');
    const enriched=enrichActions(items);
-   const json=await post({type:'save',mode:'edit',editor:editor(),actions:enriched});
+   const expected=editor();
+   if(!editorPin())throw new Error('개인별 수정 PIN을 입력한 후 공용 Sync에 연결해 주세요.');
+   for(const a of enriched){if(!canEditFor(a.manager))throw new Error('편집 권한 없음: '+expected+' 담당 거래처만 수정할 수 있습니다 ('+a.key+').');}
+   const json=await post({type:'save',mode:'edit',editor:expected,editorPin:editorPin(),actions:enriched});
    acknowledgePendingEdits(items);
    setStatus('저장됨 ✓','ok',json.updatedAt?
      '마지막 수정: '+(json.updatedBy||editor())+' · '+new Date(json.updatedAt).toLocaleString('ko-KR'):'변경사항 저장 완료');
@@ -287,5 +309,5 @@ function start(){
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastPullAt>poll)pullRemote(false);});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(start,100),{once:true});else setTimeout(start,100);
-window.DCMActionSync={pull:()=>pullRemote(true),repair:()=>pullRemote(true,true),push:()=>flushPendingEdits(),pushRisk:()=>pushRiskSnapshot(true),allRisk:()=>allRiskRows(),srmRows:()=>getData(),srmActions:()=>getLocalActions(),srmRequest:payload=>post({...payload,actor:editor()}),reasons:REASONS};
+window.DCMActionSync={pull:()=>pullRemote(true),repair:()=>pullRemote(true,true),push:()=>flushPendingEdits(),pushRisk:()=>pushRiskSnapshot(true),allRisk:()=>allRiskRows(),srmRows:()=>getData(),srmActions:()=>getLocalActions(),canEditFor,editorName:()=>editor(),srmRequest:payload=>post({...payload,actor:editor()}),reasons:REASONS};
 })();
