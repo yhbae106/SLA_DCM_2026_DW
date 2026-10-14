@@ -70,7 +70,14 @@ function installLayout(){
 }
 function localActions(){try{const x=JSON.parse(localStorage.getItem(ACTION_KEY));return Array.isArray(x)?x:[];}catch(e){return [];}}
 function renderReasonPareto(rows){const box=$('ctReasonBars');if(!box)return;const reasons=window.DCM_ACTION_REASONS||{},riskKeys=new Set((rows||window.DCMActionSync?.allRisk?.()||[]).map(r=>r.key));const used={};localActions().filter(a=>riskKeys.has(a.key)).forEach(a=>{if(a.reasonCode&&reasons[a.reasonCode])used[a.reasonCode]=(used[a.reasonCode]||0)+1;});const total=Object.values(used).reduce((a,b)=>a+b,0)||1;box.innerHTML=Object.entries(used).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="ct-bar-row"><span>${esc(reasons[k])}</span><div class="ct-bar"><i style="width:${v/total*100}%"></i></div><b>${v}</b></div>`).join('')||'<div class="ct-note">현재 필터 범위의 Action Board에서 원인코드를 입력하면 자동 집계됩니다.</div>';}
-function saveBoardField(k,field,value){const actions=localActions();let a=actions.find(x=>x.key===k);if(!a){const [outlet,businessNo]=k.split('|||');a={key:k,outlet,businessNo,history:[]};actions.push(a);}a[field]=value;a.updatedAt=new Date().toISOString();a.history=Array.isArray(a.history)?a.history:[];a.history.unshift({at:a.updatedAt,field,value});a.history=a.history.slice(0,50);localStorage.setItem(ACTION_KEY,JSON.stringify(actions));if(field==='reasonCode')renderReasonPareto();}
+function saveBoardField(k,field,value){
+ const rows=changeData(),latest=changeMonths(rows).slice(-1)[0],cur=$('month')?.value||latest;
+ const record=rows.find(r=>r.month===cur&&r.outlet+'|||'+r.businessNo===k);
+ if(cur!==latest||!record||!window.DCMActionSync?.canEditFor?.(record.manager)){
+  if($('ctSyncStatus'))$('ctSyncStatus').textContent='수정 권한 없음 · 담당자 선택·개인 PIN 또는 기준월을 확인하세요.';
+  renderAllXActionBoard();return;
+ }
+ const actions=localActions();let a=actions.find(x=>x.key===k);if(!a){const [outlet,businessNo]=k.split('|||');a={key:k,outlet,businessNo,history:[]};actions.push(a);}a[field]=value;a.updatedAt=new Date().toISOString();a.history=Array.isArray(a.history)?a.history:[];a.history.unshift({at:a.updatedAt,field,value});a.history=a.history.slice(0,50);localStorage.setItem(ACTION_KEY,JSON.stringify(actions));if(field==='reasonCode')renderReasonPareto();}
 function ensureActionControls(){
  const panel=$('ctAction'),tbody=$('ctActionBody');if(!panel||!tbody)return;
  panel.classList.add('ct-action-open','ct-action-unified');panel.classList.remove('ct-action-lazy','ct-action-collapsed');
@@ -135,6 +142,8 @@ function buildBoardContext(){
     partnerAction:base.partnerAction||{},canEdit:currentX>0||stored.has(k)};
   const archived=window.DCM_MONTHLY_ACTION_HISTORY?.get(cur,k);
   if(archived){Object.assign(merged,archived.masterAction,{monthlyHistorical:true,historyType:archived.type||'X2O',masterAction:{...archived.masterAction},partnerAction:{...archived.partnerAction},canEdit:false});}
+  if(!merged.monthlyHistorical)
+    merged.canEdit=cur===months[months.length-1]&&!!window.DCMActionSync?.canEditFor?.(merged.manager);
   if(!priorRow||merged.score>=priorRow.score)byKey.set(k,merged);
  }
  for(const entry of window.DCM_MONTHLY_ACTION_HISTORY?.forMonth(cur)||[]){
@@ -194,7 +203,7 @@ function renderAllXActionBoard(){
   };
   const dual=(r,field)=>'<td class="ct-dual-cell"><div class="ct-master-entry"><b>마스터</b>'+
    (r.monthlyHistorical?'<span class="ct-historical-value" title="DCM 개선 결과 기반 사후 정리">'+esc(historicalField(r.masterAction,field))+'</span>':
-   (r.canEdit?masterInputMarkup(r,field):'<span class="ct-readonly">현재 X 또는 기존 Action이 없어 조회 전용</span>'))+
+   (r.canEdit?masterInputMarkup(r,field):'<span class="ct-readonly">해당 담당자 수정 PIN으로 공용 Sync에 접속하고 최신월을 선택해야 입력 가능합니다</span>'))+
    '</div>'+readonlyPartnerMarkup(r,field)+'</td>';
  const status=(r,e)=>{
   const st=L.normStatus(r.statuses?.[e])||'—';
@@ -257,6 +266,7 @@ function installAllXBoard(){
  });
  ['manager','outlet','month'].forEach(id=>$(id)?.addEventListener('change',()=>{actionLimit=PAGE_SIZE;scheduleActionRender(120);}));
  window.addEventListener('dcm-action-sync-applied',()=>scheduleActionRender(80));
+ window.addEventListener('dcm-sync-access-changed',()=>scheduleActionRender(40));
  window.addEventListener('dcm-action-reasons-updated',()=>scheduleActionRender(80));
  window.addEventListener('storage',e=>{if(e.key===ACTION_KEY||e.key===DATA_KEY)scheduleActionRender(80);});
  renderAllXActionBoard();
