@@ -15,9 +15,14 @@ ok('all index assets exist');
 if(html.includes('cdn.sheetjs.com'))fail('SheetJS must not be eagerly loaded');
 ok('SheetJS is lazy-loaded');
 
-const required=['manager','outlet','month','fileInput','kpiRate','ctRate','ctActionBody','ctActionView','ctActionEntity','ctActionPriority','ctActionSearch','ctActionCount','needBody','changeBody'];
+const required=['manager','outlet','month','fileInput','kpiRate','ctRate','ctActionBody','ctActionView','ctActionEntity','ctActionSearch','ctActionCount','needBody','changeBody'];
 for(const id of required)if(!html.includes('id="'+id+'"'))fail('Missing required DOM id: '+id);
 ok('required dashboard DOM contract');
+if(!html.includes('DCM 미연동 세부 현황')||!html.includes('7개월 이상'))fail('Korean period labels or 7-plus bucket missing');
+if(html.includes('Risk Score 및 Priority 산정 기준')||html.includes('<th>Risk Score</th>')||html.includes('<th>Priority</th>'))fail('Misleading scoring display remains');
+const agingCss=read('control-tower.css');
+if(agingCss.includes('#ctAging .ct-card{height:100%}')||agingCss.includes('#ctAging .ct-target{height:100%'))fail('Target card overflow regression');
+ok('Korean DCM period labels, contained 95 percent cards, and no score UI');
 
 if(exists('SLA_DCM_2026_Partner'))fail('Legacy embedded Partner copy must stay removed');
 ok('legacy embedded Partner copy removed');
@@ -75,7 +80,7 @@ if(!masterPatch.includes("card.addEventListener('keydown'")||!masterPatch.includ
   fail('KPI cards are not interactive/keyboard accessible');
 if(!boardCss.includes('.ct-action-filterbar')||!boardCss.includes('.ct-status-badge'))
   fail('Unified Action Board responsive controls/OX styles missing');
-ok('one unified Action Board with three-company statuses, Risk and preserved edit controls');
+ok('one unified Action Board with three-company statuses and preserved edit controls');
 await import('./unified-action-render-regression.mjs');
 
 const mockData=[
