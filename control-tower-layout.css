@@ -64,3 +64,7 @@
  #ctAction .ct-board thead th:nth-child(2),#ctAction .ct-board tbody td:nth-child(2){left:65px;min-width:65px;}
  #ctAction .ct-board thead th:nth-child(3),#ctAction .ct-board tbody td:nth-child(3){left:130px;min-width:168px;max-width:168px;}
 }
+
+/* Retrospective month-scoped action snapshots never write to the live one-key Action Board. */
+#ctAction .ct-historical-value{display:block;white-space:normal;overflow-wrap:anywhere;font-weight:700;color:#315476;padding:7px 2px;line-height:1.5;max-width:240px}
+#ctAction .ct-monthly-archive{display:inline-block;margin:3px 0;padding:3px 6px;background:#edf5ff;border:1px solid #c9ddf5;border-radius:6px;color:#205b9a;font-weight:750;font-size:9px}
