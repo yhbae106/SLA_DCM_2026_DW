@@ -5,7 +5,9 @@ const PAGE_SIZE=50;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>'\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]));
 const statusLabel=s=>({TODO:'미조치',IN_PROGRESS:'진행중',WAITING:'업체회신',DONE:'완료'})[s]||'미조치';
-let actionOpen=false,actionLimit=PAGE_SIZE,actionTimer=null;
+let actionOpen=true,actionLimit=PAGE_SIZE,actionTimer=null,actionView='x',actionEntity='all',actionPriority='all',actionSearch='',activeKpi=null;
+const ACTION_VIEWS={x:'현재 미연동 X 거래처',persist:'2개월 이상 지속 X',all3:'3개사 모두 X',improved:'X→O 개선 거래처',worsened:'O→X 악화 거래처',compared:'전월 대비 비교 거래처',evaluated:'전체 O/X 평가 거래처',supply:'도도매 공급처 전체'};
+const KPI_VIEWS={rate:'evaluated',delta:'compared',unlinked:'x',need:'x',persistent:'persist',all3:'all3',improved:'improved',worsened:'worsened',supply:'supply'};
 function ensureHeroKpis(){
   const grid=document.querySelector('.ct-hero .ct-kpis');if(!grid)return;
   const rate=$('ctRate')?.closest('.ct-kpi'),delta=$('ctDelta')?.closest('.ct-kpi'),x=$('ctX')?.closest('.ct-kpi'),x2o=$('ctX2O')?.closest('.ct-kpi'),o2x=$('ctO2X')?.closest('.ct-kpi'),persist=$('ctPersist')?.closest('.ct-kpi'),all3=$('ctAll3')?.closest('.ct-kpi');
@@ -54,23 +56,35 @@ function installLayout(){
   const ctPanels=[...main.querySelectorAll(':scope > .ct-panel')].filter(x=>x!==hero);
   const aging=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('DCM Aging & Target'));
   const ai=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('AI 월간 분석'));
-  const risk=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('Risk Priority'));
-  const action=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('담당자 Action Board'));
+  const risk=null; // Risk TOP20 duplicates the unified Action Board; removed from markup.
+  const action=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('통합 Action Board'));
   if(group){group.id='ctGroup';group.classList.add('ct-overview-section');}if(outlet){outlet.id='ctOutlet';outlet.classList.add('ct-overview-section');}
   if(aging)aging.id='ctAging';if(ai)ai.id='ctAiSection';if(risk)risk.id='ctRisk';if(action)action.id='ctAction';if(changes){changes.id='ctChanges';trimDuplicateChangeCards(changes);}if(need)need.id='ctNeed';if(legacyKpis)legacyKpis.classList.add('ct-source-kpis');
-  let anchor=filters;[group,outlet,changes,aging,ai,risk,action,need].forEach(el=>{if(!el)return;anchor.insertAdjacentElement('afterend',el);anchor=el;});if(legacyKpis)main.appendChild(legacyKpis);
+  let anchor=filters;[group,outlet,changes,aging,ai,action,need].forEach(el=>{if(!el)return;anchor.insertAdjacentElement('afterend',el);anchor=el;});if(legacyKpis)main.appendChild(legacyKpis);
   let nav=$('ctQuickNav');if(!nav){nav=document.createElement('div');nav.id='ctQuickNav';nav.className='ct-quick-nav';filters.insertAdjacentElement('afterend',nav);}
-  nav.innerHTML='<button data-jump="ctGroup">그룹사별 현황</button><button data-jump="ctOutlet">업체별 현황</button><button data-jump="ctChanges">전월 대비 변화</button><button data-jump="ctAging">Aging & Target</button><button data-jump="ctRisk">Risk TOP 20</button><button data-jump="ctAction">Action Board</button><button data-jump="ctNeed">연동 필요 리스트</button>';
-  document.querySelectorAll('#ctQuickNav [data-jump]').forEach(btn=>btn.onclick=()=>{const target=$(btn.dataset.jump);if(!target)return;if(target.id==='ctAction'&&!actionOpen)openActionBoard();target.scrollIntoView({behavior:'smooth',block:'start'});});
+  nav.innerHTML='<button data-jump="ctGroup">그룹사별 현황</button><button data-jump="ctOutlet">업체별 현황</button><button data-jump="ctChanges">전월 대비 변화</button><button data-jump="ctAging">Aging & Target</button><button data-jump="ctAction">통합 Action Board</button><button data-jump="ctNeed">연동 필요 리스트</button>';
+  document.querySelectorAll('#ctQuickNav [data-jump]').forEach(btn=>btn.onclick=()=>{const target=$(btn.dataset.jump);if(!target)return;target.scrollIntoView({behavior:'smooth',block:'start'});});
   syncHeroSupportKpis();['kpiAbs','kpiSupply','kpiAbsSub','kpiSupplySub','ctDelta'].forEach(id=>{const node=$(id);if(node)new MutationObserver(syncHeroSupportKpis).observe(node,{childList:true,subtree:true,characterData:true});});['manager','outlet','month'].forEach(id=>$(id)?.addEventListener('change',()=>setTimeout(syncHeroSupportKpis,80)));
 }
 function localActions(){try{const x=JSON.parse(localStorage.getItem(ACTION_KEY));return Array.isArray(x)?x:[];}catch(e){return [];}}
 function renderReasonPareto(rows){const box=$('ctReasonBars');if(!box)return;const reasons=window.DCM_ACTION_REASONS||{},riskKeys=new Set((rows||window.DCMActionSync?.allRisk?.()||[]).map(r=>r.key));const used={};localActions().filter(a=>riskKeys.has(a.key)).forEach(a=>{if(a.reasonCode&&reasons[a.reasonCode])used[a.reasonCode]=(used[a.reasonCode]||0)+1;});const total=Object.values(used).reduce((a,b)=>a+b,0)||1;box.innerHTML=Object.entries(used).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="ct-bar-row"><span>${esc(reasons[k])}</span><div class="ct-bar"><i style="width:${v/total*100}%"></i></div><b>${v}</b></div>`).join('')||'<div class="ct-note">현재 필터 범위의 Action Board에서 원인코드를 입력하면 자동 집계됩니다.</div>';}
 function saveBoardField(k,field,value){const actions=localActions();let a=actions.find(x=>x.key===k);if(!a){const [outlet,businessNo]=k.split('|||');a={key:k,outlet,businessNo,history:[]};actions.push(a);}a[field]=value;a.updatedAt=new Date().toISOString();a.history=Array.isArray(a.history)?a.history:[];a.history.unshift({at:a.updatedAt,field,value});a.history=a.history.slice(0,50);localStorage.setItem(ACTION_KEY,JSON.stringify(actions));if(field==='reasonCode')renderReasonPareto();}
-function ensureActionControls(){const panel=$('ctAction'),tbody=$('ctActionBody');if(!panel||!tbody)return;const head=panel.querySelector('.section-head');if(!head)return;panel.classList.add('ct-action-lazy','ct-action-collapsed');if(!$('ctActionToggle')){const btn=document.createElement('button');btn.id='ctActionToggle';btn.className='ct-btn ct-action-toggle';btn.type='button';btn.textContent='Action Board 열기';head.appendChild(btn);btn.addEventListener('click',()=>actionOpen?closeActionBoard():openActionBoard());}const tableWrap=tbody.closest('.table-scroll');if(tableWrap&&!$('ctActionMoreWrap')){const more=document.createElement('div');more.id='ctActionMoreWrap';more.className='ct-action-more';more.innerHTML='<span id="ctActionShown"></span><button class="ct-btn" id="ctActionMore" type="button">50건 더 보기</button><button class="ct-btn" id="ctActionAll" type="button">전체 보기</button>';tableWrap.insertAdjacentElement('afterend',more);$('ctActionMore')?.addEventListener('click',()=>{actionLimit+=PAGE_SIZE;renderAllXActionBoard();});$('ctActionAll')?.addEventListener('click',()=>{actionLimit=Number.MAX_SAFE_INTEGER;renderAllXActionBoard();});}clearActionRows();}
-function clearActionRows(){const tbody=$('ctActionBody');if(tbody)tbody.innerHTML='';}
-function openActionBoard(){actionOpen=true;actionLimit=PAGE_SIZE;const panel=$('ctAction');panel?.classList.remove('ct-action-collapsed');panel?.classList.add('ct-action-open');const btn=$('ctActionToggle');if(btn)btn.textContent='Action Board 닫기';renderAllXActionBoard();}
-function closeActionBoard(){actionOpen=false;actionLimit=PAGE_SIZE;const panel=$('ctAction');panel?.classList.add('ct-action-collapsed');panel?.classList.remove('ct-action-open');const btn=$('ctActionToggle');if(btn)btn.textContent='Action Board 열기';clearActionRows();}
+function ensureActionControls(){
+ const panel=$('ctAction'),tbody=$('ctActionBody');if(!panel||!tbody)return;
+ panel.classList.add('ct-action-open','ct-action-unified');panel.classList.remove('ct-action-lazy','ct-action-collapsed');
+ const tableWrap=tbody.closest('.table-scroll');
+ if(tableWrap&&!$('ctActionMoreWrap')){
+  const more=document.createElement('div');more.id='ctActionMoreWrap';more.className='ct-action-more';
+  more.innerHTML='<span id="ctActionShown"></span><button class="ct-btn" id="ctActionMore" type="button">50건 더 보기</button><button class="ct-btn" id="ctActionAll" type="button">전체 보기</button>';
+  tableWrap.insertAdjacentElement('afterend',more);
+  $('ctActionMore').addEventListener('click',()=>{actionLimit+=PAGE_SIZE;renderAllXActionBoard();});
+  $('ctActionAll').addEventListener('click',()=>{actionLimit=Number.MAX_SAFE_INTEGER;renderAllXActionBoard();});
+ }
+}
+function openActionBoard(){
+ actionOpen=true;const panel=$('ctAction');panel?.classList.remove('ct-action-collapsed');panel?.classList.add('ct-action-open');renderAllXActionBoard();
+}
+function closeActionBoard(){/* Unified Action Board remains visible and replaces Risk TOP20. */}
 function readonlyPartnerMarkup(r,field){
   const p=r.partnerAction||{},edited=Array.isArray(p.editedFields)&&p.editedFields.includes(field);
   const explanations=window.DCM_ACTION_REASONS||{};
@@ -89,25 +103,134 @@ function masterInputMarkup(r,field){
   if(field==='dueDate')return `<input type="date" data-allx-field="dueDate" data-key="${k}" value="${esc(r.dueDate||'')}">`;
   return `<input type="text" data-allx-field="plan" data-key="${k}" value="${esc(r.plan||'')}" placeholder="마스터 조치계획">`;
 }
-function renderAllXActionBoard(){
-  const api=window.DCMActionSync,tbody=$('ctActionBody');
-  if(!actionOpen||!api?.allRisk||!tbody)return;
-  const rows=api.allRisk(),visible=rows.slice(0,actionLimit),table=tbody.closest('table'),head=table?.querySelector('thead tr');
-  if(head&&!head.dataset.dualOwner){
-    head.dataset.dualOwner='1';head.innerHTML='<th>Priority</th><th>Score</th><th>실사업자명</th><th>업체/권역</th><th>담당자</th><th>Aging</th><th>원인</th><th>조치계획</th><th>Due</th><th>상태</th>';
+function buildBoardContext(){
+ const L=window.DCMLogic||{},data=changeData(),months=changeMonths(data),cur=$('month')?.value||months[months.length-1]||'',idx=months.indexOf(cur),prev=idx>0?months[idx-1]:null;
+ const curr=changeScope(data,cur),prior=prev?changeScope(data,prev):[],changes=L.compare(prior,curr);
+ const risk=window.DCMActionSync?.allRisk?.()||[],riskMap=new Map(risk.map(r=>[r.key,r]));
+ const stored=new Map(localActions().map(a=>[a.key,a]));
+ const prevMap=new Map(prior.map(r=>[r.outlet+'|||'+r.businessNo,r]));
+ const improved=new Map(),worsened=new Map();
+ for(const [map,list] of [[improved,changes.xToO||[]],[worsened,changes.oToX||[]]]){
+  list.forEach(item=>{const k=item.outlet+'|||'+item.businessNo;if(!map.has(k))map.set(k,new Set());map.get(k).add(item.entity);});
+ }
+ const rowHistory=new Map();
+ data.filter(r=>r.month<=cur&&months.includes(r.month)).forEach(r=>{const k=r.outlet+'|||'+r.businessNo;if(!rowHistory.has(k))rowHistory.set(k,new Map());rowHistory.get(k).set(r.month,r);});
+ const byKey=new Map();
+ for(const r of curr){
+  const k=r.outlet+'|||'+r.businessNo,priorRow=byKey.get(k);
+  const base=riskMap.get(k)||stored.get(k)||{};
+  const entityStreak={};let streak=0;
+  for(const e of L.E||[]){
+   let n=0;
+   for(let i=idx;i>=0;i--){const at=rowHistory.get(k)?.get(months[i]);if(L.normStatus(at?.statuses?.[e])==='X')n++;else break;}
+   entityStreak[e]=n;streak=Math.max(streak,n);
   }
-  const panel=tbody.closest('.ct-panel'),desc=panel?.querySelector('.section-head p');
-  if(desc)desc.textContent=`현재 필터의 X 거래처 ${rows.length}건 · 위=마스터 작성/수정, 아래=업체 작성(읽기 전용) · Risk Score 높은 순`;
-  const dual=(r,field)=>`<td class="ct-dual-cell"><div class="ct-master-entry"><b>마스터</b>${masterInputMarkup(r,field)}</div>${readonlyPartnerMarkup(r,field)}</td>`;
-  tbody.innerHTML=visible.map(r=>`<tr><td><span class="ct-priority ct-${String(r.priority||'P3').toLowerCase()}">${esc(r.priority||'P3')}</span></td><td><strong>${Number(r.score)||0}</strong></td><td>${esc(r.businessName||'')}<button type="button" class="srm-launch" data-srm-open="${esc(r.key)}">SRM 협의</button></td><td>${esc(r.outlet||'')}</td><td>${esc(r.manager||'')}</td><td>${esc(r.aging||'')}</td>${['reasonCode','plan','dueDate','status'].map(f=>dual(r,f)).join('')}</tr>`).join('')||'<tr><td colspan="10" class="empty">현재 필터에 X 거래처가 없습니다.</td></tr>';
-  tbody.querySelectorAll('[data-allx-field]').forEach(el=>el.addEventListener('change',()=>saveBoardField(el.dataset.key,el.dataset.allxField,el.value)));
-  renderReasonPareto(rows);
-  const shown=$('ctActionShown'),more=$('ctActionMore'),all=$('ctActionAll');
-  if(shown)shown.textContent=`${Math.min(visible.length,rows.length)} / ${rows.length}건 표시`;
-  if(more)more.hidden=visible.length>=rows.length;
-  if(all)all.hidden=visible.length>=rows.length;
+  const currentX=(L.E||[]).filter(e=>L.normStatus(r.statuses?.[e])==='X').length;
+  const merged={...base,...r,key:k,priority:riskMap.get(k)?.priority||'P3',score:riskMap.get(k)?.score||0,
+    xCount:currentX,aging:streak+'M',entityStreak,
+    reasonCode:base.reasonCode||'',plan:base.plan||'',dueDate:base.dueDate||'',status:base.status||'TODO',
+    partnerAction:base.partnerAction||{},canEdit:currentX>0||stored.has(k)};
+  if(!priorRow||merged.score>=priorRow.score)byKey.set(k,merged);
+ }
+ const rows=[...byKey.values()].sort((a,b)=>b.score-a.score||b.xCount-a.xCount||
+   String(a.businessName||'').localeCompare(String(b.businessName||''),'ko'));
+ return {rows,improved,worsened,prevMap,month:cur};
 }
-function scheduleActionRender(delay=100){clearTimeout(actionTimer);actionTimer=setTimeout(()=>{if(actionOpen)renderAllXActionBoard();},delay);}
-function installAllXBoard(){const tbody=$('ctActionBody');if(!tbody)return;ensureActionControls();['manager','outlet','month'].forEach(id=>$(id)?.addEventListener('change',()=>{actionLimit=PAGE_SIZE;scheduleActionRender(140);}));window.addEventListener('dcm-action-sync-applied',()=>scheduleActionRender(80));}
+function filterUnifiedRows(ctx,view='x',entity='all',priority='all',search=''){
+ const L=window.DCMLogic||{},E=L.E||[],scope=entity==='all'?E:[entity];
+ const q=String(search||'').trim().toLocaleLowerCase('ko');
+ return ctx.rows.filter(r=>{
+  const key=r.key,current=r.statuses||{},before=ctx.prevMap.get(key)?.statuses||{};
+  if(priority!=='all'&&r.priority!==priority)return false;
+  let ok=false;
+  switch(view){
+   case 'x':ok=scope.some(e=>L.normStatus(current[e])==='X');break;
+   case 'persist':ok=scope.some(e=>L.normStatus(current[e])==='X'&&(r.entityStreak?.[e]||0)>=2);break;
+   case 'all3':ok=E.every(e=>L.normStatus(current[e])==='X');break;
+   case 'improved':ok=scope.some(e=>ctx.improved.get(key)?.has(e));break;
+   case 'worsened':ok=scope.some(e=>ctx.worsened.get(key)?.has(e));break;
+   case 'compared':ok=scope.some(e=>L.normStatus(current[e])&&L.normStatus(before[e]));break;
+   case 'evaluated':
+   case 'supply':ok=scope.some(e=>L.normStatus(current[e]));break;
+   default:ok=false;
+  }
+  if(!ok)return false;
+  return !q||[r.businessName,r.businessNo,r.outlet,r.manager].some(v=>String(v||'').toLocaleLowerCase('ko').includes(q));
+ });
+}
+function renderAllXActionBoard(){
+ const tbody=$('ctActionBody');if(!actionOpen||!tbody)return;
+ const L=window.DCMLogic,E=L?.E||[],ctx=buildBoardContext();
+ const rows=filterUnifiedRows(ctx,actionView,actionEntity,actionPriority,actionSearch),visible=rows.slice(0,actionLimit);
+ const reasons=window.DCM_ACTION_REASONS||{};
+ const dual=(r,field)=>'<td class="ct-dual-cell"><div class="ct-master-entry"><b>마스터</b>'+
+   (r.canEdit?masterInputMarkup(r,field):'<span class="ct-readonly">현재 X 또는 기존 Action이 없어 조회 전용</span>')+
+   '</div>'+readonlyPartnerMarkup(r,field)+'</td>';
+ const status=(r,e)=>{
+  const st=L.normStatus(r.statuses?.[e])||'—';
+  return '<td class="ct-ox-cell"><span class="ct-status-badge '+(st==='O'?'o':st==='X'?'x':'na')+'" title="'+esc(e)+' '+(st==='O'?'연동':st==='X'?'미연동':'미평가')+'">'+st+'</span></td>';
+ };
+ tbody.innerHTML=visible.map(r=>'<tr>'+
+  '<td><span class="ct-priority ct-'+String(r.priority||'P3').toLowerCase()+'">'+esc(r.priority||'P3')+'</span></td>'+
+  '<td class="ct-score"><strong title="현재 미연동 그룹사 '+r.xCount+'건 · Risk 기반 점수">'+(Number(r.score)||0)+'</strong></td>'+
+  '<td class="ct-merchant"><strong>'+esc(r.businessName||'')+'</strong><small>'+esc(r.businessNo||'')+'</small><button type="button" class="srm-launch" data-srm-open="'+esc(r.key)+'">SRM 협의</button></td>'+
+  '<td>'+esc(r.outlet||'')+'</td><td>'+esc(r.manager||'')+'</td>'+
+  E.map(e=>status(r,e)).join('')+
+  '<td>'+esc(r.aging||'0M')+'</td>'+
+  ['reasonCode','plan','dueDate','status'].map(f=>dual(r,f)).join('')+'</tr>').join('')||
+  '<tr><td colspan="13" class="empty">선택한 조건에 해당하는 거래처가 없습니다. 필터를 변경해 주세요.</td></tr>';
+ tbody.querySelectorAll('[data-allx-field]').forEach(el=>el.addEventListener('change',()=>{
+  saveBoardField(el.dataset.key,el.dataset.allxField,el.value);
+ }));
+ const baseRisk=window.DCMActionSync?.allRisk?.()||[];renderReasonPareto(baseRisk);
+ const assessed=rows.reduce((n,r)=>n+E.filter(e=>L.normStatus(r.statuses?.[e])).length,0);
+ const xcount=rows.reduce((n,r)=>n+E.filter(e=>L.normStatus(r.statuses?.[e])==='X').length,0);
+ if($('ctActionViewName'))$('ctActionViewName').textContent=ACTION_VIEWS[actionView]||ACTION_VIEWS.x;
+ if($('ctActionCount'))$('ctActionCount').textContent=rows.length.toLocaleString()+'처 · O '+(assessed-xcount).toLocaleString()+'건 / X '+xcount.toLocaleString()+'건';
+ const shown=$('ctActionShown'),more=$('ctActionMore'),all=$('ctActionAll');
+ if(shown)shown.textContent=Math.min(visible.length,rows.length).toLocaleString()+' / '+rows.length.toLocaleString()+'처 표시';
+ if(more)more.hidden=visible.length>=rows.length;
+ if(all)all.hidden=visible.length>=rows.length;
+ document.querySelectorAll('.ct-hero .ct-kpi[data-kpi]').forEach(card=>{
+  const chosen=card.dataset.kpi===activeKpi;card.classList.toggle('ct-kpi-selected',chosen);
+  card.setAttribute('aria-pressed',chosen?'true':'false');
+ });
+}
+function scheduleActionRender(delay=100){clearTimeout(actionTimer);actionTimer=setTimeout(renderAllXActionBoard,delay);}
+function setActionView(view,{scroll=true,kpi=null}={}){
+ actionView=Object.hasOwn(ACTION_VIEWS,view)?view:'x';activeKpi=kpi;
+ actionEntity='all';actionPriority='all';actionSearch='';actionLimit=PAGE_SIZE;
+ if($('ctActionView'))$('ctActionView').value=actionView;
+ if($('ctActionEntity'))$('ctActionEntity').value='all';
+ if($('ctActionPriority'))$('ctActionPriority').value='all';
+ if($('ctActionSearch'))$('ctActionSearch').value='';
+ renderAllXActionBoard();
+ if(scroll)$('ctAction')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function installAllXBoard(){
+ const tbody=$('ctActionBody');if(!tbody)return;ensureActionControls();
+ for(const [id,variable] of [['ctActionView','view'],['ctActionEntity','entity'],['ctActionPriority','priority'],['ctActionSearch','search']]){
+  const el=$(id);if(!el)continue;
+  el.addEventListener(variable==='search'?'input':'change',()=>{
+   actionView=$('ctActionView')?.value||'x';actionEntity=$('ctActionEntity')?.value||'all';
+   actionPriority=$('ctActionPriority')?.value||'all';actionSearch=$('ctActionSearch')?.value||'';
+   activeKpi=null;actionLimit=PAGE_SIZE;scheduleActionRender(variable==='search'?75:0);
+  });
+ }
+ $('ctActionClear')?.addEventListener('click',()=>setActionView('x',{scroll:false}));
+ document.querySelectorAll('.ct-hero .ct-kpi[data-kpi]').forEach(card=>{
+  const view=KPI_VIEWS[card.dataset.kpi];if(!view)return;
+  card.setAttribute('role','button');card.tabIndex=0;card.setAttribute('aria-controls','ctAction');
+  card.title='클릭하면 '+ACTION_VIEWS[view]+' 목록이 열립니다.';
+  card.addEventListener('click',()=>setActionView(view,{kpi:card.dataset.kpi}));
+  card.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();setActionView(view,{kpi:card.dataset.kpi});}});
+ });
+ ['manager','outlet','month'].forEach(id=>$(id)?.addEventListener('change',()=>{actionLimit=PAGE_SIZE;scheduleActionRender(120);}));
+ window.addEventListener('dcm-action-sync-applied',()=>scheduleActionRender(80));
+ window.addEventListener('dcm-action-reasons-updated',()=>scheduleActionRender(80));
+ window.addEventListener('storage',e=>{if(e.key===ACTION_KEY||e.key===DATA_KEY)scheduleActionRender(80);});
+ renderAllXActionBoard();
+}
+window.DCMUnifiedAction={filter:filterUnifiedRows,build:buildBoardContext,select:setActionView};
 window.addEventListener('load',()=>{installLayout();installChangeFilterFix();installAllXBoard();renderReasonPareto();setTimeout(syncHeroSupportKpis,120);const old=document.getElementById('resetBtn');if(!old)return;const b=old.cloneNode(true);old.replaceWith(b);b.onclick=()=>{if(!confirm('브라우저에 추가한 월별 데이터와 Action 이력을 지우고 최초 6월/7월 데이터로 복원할까요?'))return;localStorage.setItem(DATA_KEY,JSON.stringify(window.DCM_BASE_DATA||[]));localStorage.setItem(ACTION_KEY,'[]');location.reload();};});
 })();
