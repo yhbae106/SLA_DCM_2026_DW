@@ -800,6 +800,7 @@ function appendSrmEvent_(body,side,partner){
     clean[f]=String(body[f]||'').trim();
     if(clean[f].length>1000)throw new Error(f+' 입력값이 1000자를 초과했습니다.');
   });
+  if(clean.reason&&!Object.prototype.hasOwnProperty.call(DCM_REASON_DEFAULTS,clean.reason))throw new Error('SRM 원인코드는 01~07만 허용합니다.');
   if(clean.dueDate&&!/^\d{4}-\d{2}-\d{2}$/.test(clean.dueDate))throw new Error('기한은 YYYY-MM-DD 형식이어야 합니다.');
   if(clean.baselineMonth&&!/^\d{4}-\d{2}$/.test(clean.baselineMonth))throw new Error('기준월 형식이 올바르지 않습니다.');
   if(!clean.detail&&!clean.nextAction)throw new Error('협의내용 또는 다음 조치를 입력해 주세요.');
