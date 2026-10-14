@@ -15,7 +15,7 @@ ok('all index assets exist');
 if(html.includes('cdn.sheetjs.com'))fail('SheetJS must not be eagerly loaded');
 ok('SheetJS is lazy-loaded');
 
-const required=['manager','outlet','month','fileInput','kpiRate','ctRate','ctRiskBody','ctActionBody','needBody','changeBody'];
+const required=['manager','outlet','month','fileInput','kpiRate','ctRate','ctActionBody','ctActionView','ctActionEntity','ctActionPriority','ctActionSearch','ctActionCount','needBody','changeBody'];
 for(const id of required)if(!html.includes('id="'+id+'"'))fail('Missing required DOM id: '+id);
 ok('required dashboard DOM contract');
 
@@ -57,6 +57,59 @@ for(const id of expectedKpiOrder){
   lastKpiIndex=pos;
 }
 ok('nine executive KPI cards in requested priority order');
+
+if(html.includes('id="ctRiskBody"')||html.includes('<h2>Risk Priority TOP 20</h2>')||html.includes('<h2>담당자 Action Board</h2>'))
+  fail('Duplicate TOP20/legacy Action Board has not been consolidated');
+if((html.match(/id="ctActionBody"/g)||[]).length!==1)fail('More than one Action Board table detected');
+for(const company of ['대웅제약','대웅바이오','한올바이오']){
+ if(!html.includes('<th>'+company+'</th>'))fail('Missing company O/X column: '+company);
+}
+const masterPatch=read('control-tower-patch.js'),boardCss=read('control-tower-layout.css');
+new Function(masterPatch);
+if(!masterPatch.includes("data-srm-open")||!masterPatch.includes("readonlyPartnerMarkup")||!masterPatch.includes("saveBoardField"))
+  fail('Unified Board lost SRM case link, partner notes or master write-back');
+if(!masterPatch.includes("card.addEventListener('keydown'")||!masterPatch.includes('KPI_VIEWS'))
+  fail('KPI cards are not interactive/keyboard accessible');
+if(!boardCss.includes('.ct-action-filterbar')||!boardCss.includes('.ct-status-badge'))
+  fail('Unified Action Board responsive controls/OX styles missing');
+ok('one unified Action Board with three-company statuses, Risk and preserved edit controls');
+
+const mockData=[
+ {month:'2026-08',outlet:'A',businessNo:'1',businessName:'Alpha',manager:'M',statuses:S('X','O',null)},
+ {month:'2026-08',outlet:'A',businessNo:'2',businessName:'Beta',manager:'M',statuses:S('X','X','X')},
+ {month:'2026-08',outlet:'A',businessNo:'3',businessName:'Gamma',manager:'M',statuses:S('X',null,null)},
+ {month:'2026-08',outlet:'A',businessNo:'4',businessName:'Delta',manager:'M',statuses:S('O','O','O')},
+ {month:'2026-09',outlet:'A',businessNo:'1',businessName:'Alpha',manager:'M',statuses:S('O','X',null)},
+ {month:'2026-09',outlet:'A',businessNo:'2',businessName:'Beta',manager:'M',statuses:S('X','X','X')},
+ {month:'2026-09',outlet:'A',businessNo:'3',businessName:'Gamma',manager:'M',statuses:S('O',null,null)},
+ {month:'2026-09',outlet:'A',businessNo:'4',businessName:'Delta',manager:'M',statuses:S('O','O','O')}
+];
+const uiEnv={DCMLogic:L,DCM_BASE_DATA:mockData,
+ localStorage:{getItem:key=>key==='dcm-dashboard-v8-data'?JSON.stringify(mockData):'[]'},
+ document:{getElementById:id=>({manager:'전체',outlet:'전체',month:'2026-09'})[id]?{value:({manager:'전체',outlet:'전체',month:'2026-09'})[id]}:null},
+ addEventListener(){},DCMActionSync:{allRisk:()=>[
+  {key:'A|||1',outlet:'A',businessNo:'1',score:8,xCount:1,priority:'P2'},
+  {key:'A|||2',outlet:'A',businessNo:'2',score:15,xCount:3,priority:'P1'}
+ ]}};
+uiEnv.window=uiEnv;uiEnv.globalThis=uiEnv;
+vm.createContext(uiEnv);
+vm.runInContext(masterPatch,uiEnv);
+const board=uiEnv.DCMUnifiedAction;
+if(!board)fail('Master unified list selection module missing');
+const context=board.build();
+const ids=(view,entity='all',priority='all',q='')=>board.filter(context,view,entity,priority,q).map(x=>x.businessNo).sort().join(',');
+if(ids('x')!=='1,2')fail('X filter excludes/include wrong records');
+if(ids('persist')!=='2'||ids('all3')!=='2')fail('Persistent/3-company X result invalid');
+if(ids('improved')!=='1,3')fail('X→O must include O-only improvement');
+if(ids('worsened')!=='1')fail('O→X filter mismatch');
+if(ids('evaluated')!=='1,2,3,4'||ids('supply')!=='1,2,3,4')fail('Evaluated O-only merchants lost');
+if(ids('compared')!=='1,2,3,4')fail('Compared merchant mapping failed');
+if(ids('x','대웅제약')!=='2'||ids('x','대웅바이오')!=='1,2')fail('Company selection failed');
+if(ids('x','all','P1')!=='2')fail('Risk Priority filter failed');
+if(ids('evaluated','all','all','Gamma')!=='3'||ids('x','all','all','impossible')!=='')fail('Search filter failed');
+if(context.rows.length!==4)fail('Unique retailer deduplication lost');
+ok('unified Board KPI, persistent X, all3, X-to-O, O-to-X, company, priority and search filters');
+
 vm.runInContext(read('data/base-data.js'),ctx);
 const daejeon=ctx.DCM_BASE_DATA.filter(r=>r.outlet==='백제약품 대전');
 if(!daejeon.length||daejeon.some(r=>r.manager!=='정직한'))fail('Historical Daejeon manager not corrected');
