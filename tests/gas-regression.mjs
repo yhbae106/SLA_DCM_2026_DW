@@ -73,6 +73,26 @@ const context={
 };
 vm.createContext(context);vm.runInContext(script,context);
 const call=(name,...args)=>context[name](...args);
+scriptProps.set('DCM_EDITOR_PIN_BAE','baePIN123');
+scriptProps.set('DCM_EDITOR_PIN_JEONG','jeongPIN123');
+scriptProps.set('DCM_EDITOR_PIN_LIM','limPIN123');
+const auth=(editor,pin,key)=>call('assertActionEditorAccess_',editor,pin,[{key}]);
+auth('배영훈','baePIN123','백제약품 대전|||31');
+auth('정직한','jeongPIN123','백제약품 대전|||31');
+let wrongEditorDenied=false;try{auth('임인숙','limPIN123','백제약품 대전|||31')}catch(e){wrongEditorDenied=true;}
+if(!wrongEditorDenied)fail('임인숙 could edit a 정직한 merchant');
+let wrongPinDenied=false;try{auth('정직한','wrong','백제약품 대전|||31')}catch(e){wrongPinDenied=true;}
+if(!wrongPinDenied)fail('Incorrect editor PIN was accepted');
+let unknownDenied=false;try{auth('관리자','baePIN123','백제약품 대전|||31')}catch(e){unknownDenied=true;}
+if(!unknownDenied)fail('Unregistered editor was accepted');
+let missingDenied=false;try{auth('배영훈','baePIN123','백제약품 대전|||9999')}catch(e){missingDenied=true;}
+if(!missingDenied)fail('Merchant absent from DCM source gained edit permission');
+dashboard.rows.push(['2026-09','인천약품','임인숙','2201','테스트 도도매','X','','','']);
+auth('배영훈','baePIN123','인천약품|||2201');
+auth('임인숙','limPIN123','인천약품|||2201');
+let crossDenied=false;try{auth('정직한','jeongPIN123','인천약품|||2201')}catch(e){crossDenied=true;}
+if(!crossDenied)fail('정직한 could edit 임인숙 merchant');
+ok('three named editors: Bae may edit all, Jeong/Lim only own, wrong PIN and absent merchant denied');
 const initial31=sheet.rows[30][7],initial110=sheet.rows[109][7];
 call('saveActions_',[{key:'백제약품 대전|||31',changedFields:['plan'],plan:'Master updated plan'}],'배영훈','edit');
 if(sheet.rows[30][7]!==initial31||sheet.rows[30][8]!=='Master updated plan')fail('Plan-only save modified historical H31');
