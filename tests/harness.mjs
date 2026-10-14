@@ -25,6 +25,7 @@ ok('legacy embedded Partner copy removed');
 function walk(dir='.'){return fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>{const p=path.join(dir,e.name);if(e.name==='.git'||e.name==='node_modules')return[];return e.isDirectory()?walk(p):[p]})}
 for(const file of walk().filter(x=>x.endsWith('.js'))){execFileSync(process.execPath,['--check',file],{stdio:'pipe'});}
 ok('all JavaScript parses');
+await import('./monthly-history-regression.mjs');
 
 const ctx={};ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);vm.runInContext(read('logic.js'),ctx);
 const L=ctx.DCMLogic;if(!L)fail('DCMLogic not exported');
@@ -95,10 +96,22 @@ const uiEnv={DCMLogic:L,DCM_BASE_DATA:mockData,
  ]}};
 uiEnv.window=uiEnv;uiEnv.globalThis=uiEnv;
 vm.createContext(uiEnv);
+vm.runInContext(read('data/monthly-action-history.js'),uiEnv);
 vm.runInContext(masterPatch,uiEnv);
 const board=uiEnv.DCMUnifiedAction;
 if(!board)fail('Master unified list selection module missing');
 const context=board.build();
+const archived=uiEnv.DCM_MONTHLY_ACTION_HISTORY.get('2026-09','A|||3');
+if(!archived||archived.masterAction.status!=='DONE'||archived.partnerAction.status!=='DONE')
+  fail('Master July/Aug/Sept historical X→O completion projection failed');
+const monthlyRow=context.rows.find(r=>r.key==='A|||3');
+if(!monthlyRow?.monthlyHistorical||monthlyRow.canEdit!==false||
+ monthlyRow.masterAction.plan!=='ERP업체 소통하여 정상 연동 조치'||
+ monthlyRow.partnerAction.plan!=='거래처 요청 및 대웅 협조')
+  fail('Master historical view did not preserve separate read-only plans');
+if(ids('history')!=='3')fail('Master monthly history filter must show O-only converted transaction');
+ok('Master month-specific completed action appears read-only in unified board');
+
 const ids=(view,entity='all',priority='all',q='')=>board.filter(context,view,entity,priority,q).map(x=>x.businessNo).sort().join(',');
 if(ids('x')!=='1,2')fail('X filter excludes/include wrong records');
 if(ids('persist')!=='2'||ids('all3')!=='2')fail('Persistent/3-company X result invalid');
