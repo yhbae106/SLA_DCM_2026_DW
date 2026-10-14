@@ -97,8 +97,20 @@ function observeBoard(){
  $('fileInput')?.addEventListener('change',()=>scheduleRiskSnapshot(1600,false));
 }
 function enrichActions(actions){
- const rows={};document.querySelectorAll('#ctActionBody tr').forEach(tr=>{const sel=tr.querySelector('[data-key]');if(!sel)return;const cells=tr.querySelectorAll('td');if(cells.length<9)return;const hasScore=cells.length>=10;rows[sel.dataset.key]={priority:cells[0]?.innerText.trim()||'',businessName:cells[hasScore?2:1]?.innerText.trim()||'',outlet:cells[hasScore?3:2]?.innerText.trim()||'',manager:cells[hasScore?4:3]?.innerText.trim()||'',aging:cells[hasScore?5:4]?.innerText.trim()||''};});
- return (actions||[]).map(a=>({...a,...(rows[a.key]||{}),modifiedBy:editor()}));
+  // Resolve metadata from underlying merchant records, not from 9-/13-column DOM positions.
+  const data=getData(),month=currentMonth(data),current=new Map(scoped(data,month).map(r=>[rowKey(r),r]));
+  const risks=new Map(allRiskRows().map(r=>[r.key,r]));
+  return (actions||[]).map(a=>{
+    const record=current.get(a.key),risk=risks.get(a.key),metadata={};
+    if(record){
+      metadata.businessName=record.businessName||'';
+      metadata.outlet=record.outlet||'';
+      metadata.businessNo=record.businessNo||'';
+      metadata.manager=record.manager||'';
+    }
+    if(risk){metadata.priority=risk.priority||'';metadata.aging=risk.aging||'';}
+    return {...a,...metadata,modifiedBy:editor()};
+  });
 }
 async function post(payload){
  if(!endpoint()||!token())throw new Error(!endpoint()?'Apps Script URL 미설정':'공유키를 입력해 주세요');
