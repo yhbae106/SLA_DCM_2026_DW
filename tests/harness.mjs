@@ -78,6 +78,7 @@ ok('one unified Action Board with three-company statuses, Risk and preserved edi
 await import('./unified-action-render-regression.mjs');
 
 const mockData=[
+ {month:'2026-06',outlet:'A',businessNo:'s',businessName:'Stop June X',manager:'M',statuses:S('X',null,null)},
  {month:'2026-08',outlet:'A',businessNo:'1',businessName:'Alpha',manager:'M',statuses:S('X','O',null)},
  {month:'2026-08',outlet:'A',businessNo:'2',businessName:'Beta',manager:'M',statuses:S('X','X','X')},
  {month:'2026-08',outlet:'A',businessNo:'3',businessName:'Gamma',manager:'M',statuses:S('X',null,null)},
@@ -124,6 +125,25 @@ if(ids('x','all','P1')!=='2')fail('Risk Priority filter failed');
 if(ids('evaluated','all','all','Gamma')!=='3'||ids('x','all','all','impossible')!=='')fail('Search filter failed');
 if(context.rows.length!==4)fail('Unique retailer deduplication lost');
 ok('unified Board KPI, persistent X, all3, X-to-O, O-to-X, company, priority and search filters');
+const oldFind=uiEnv.document.getElementById;
+uiEnv.document.getElementById=id=>{
+  if(id==='month')return {value:'2026-07'};
+  return oldFind(id);
+};
+const julyStop=board.build();
+if(julyStop.rows.length!==1)fail('Master July must project missing-sales June-X merchant into history');
+const only=board.filter(julyStop,'stopped');
+if(only.length!==1||only[0].key!=='A|||s')fail('Master stopped filter missing July no-sales merchant');
+if(only[0].partnerAction.reasonCode!=='04'||
+ only[0].partnerAction.plan!=='공급 중단'||
+ only[0].partnerAction.dueDate!=='2026-07-31'||
+ only[0].partnerAction.status!=='DONE')
+  fail('Master did not surface independent Partner stop closure');
+if(only[0].masterAction.plan||only[0].masterAction.reasonCode||only[0].canEdit!==false)
+  fail('Partner-only July closure must not manufacture Master actions');
+uiEnv.document.getElementById=oldFind;
+ok('Master July missing-sales synthetic Partner 04 DONE record and unchanged master fields');
+
 
 vm.runInContext(read('data/base-data.js'),ctx);
 const daejeon=ctx.DCM_BASE_DATA.filter(r=>r.outlet==='백제약품 대전');
