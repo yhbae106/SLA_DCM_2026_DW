@@ -107,6 +107,7 @@ function masterInputMarkup(r,field){
 }
 function buildBoardContext(){
  const L=window.DCMLogic||{},data=changeData(),months=changeMonths(data),cur=$('month')?.value||months[months.length-1]||'',idx=months.indexOf(cur),prev=idx>0?months[idx-1]:null;
+ window.DCM_MONTHLY_ACTION_HISTORY?.refresh(data);
  const curr=changeScope(data,cur),prior=prev?changeScope(data,prev):[],changes=L.compare(prior,curr);
  const risk=window.DCMActionSync?.allRisk?.()||[],riskMap=new Map(risk.map(r=>[r.key,r]));
  const stored=new Map(localActions().map(a=>[a.key,a]));
