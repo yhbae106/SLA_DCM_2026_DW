@@ -63,6 +63,7 @@
 #ctAction .ct-monthly-archive{display:inline-block;margin:3px 0;padding:3px 6px;background:#edf5ff;border:1px solid #c9ddf5;border-radius:6px;color:#205b9a;font-weight:750;font-size:9px}
 
 /* Action Board: all ten columns fit the available desktop width; retain vertical scrolling only. */
+#ctAction .ct-board{overflow-x:hidden;overflow-y:auto;}
 #ctAction .ct-board table{width:100%;min-width:0;max-width:100%;table-layout:fixed;}
 #ctAction .ct-board th,#ctAction .ct-board td{min-width:0;max-width:none;box-sizing:border-box;padding:8px 5px;white-space:normal;overflow-wrap:anywhere;word-break:normal;}
 #ctAction .ct-board th{line-height:1.4;vertical-align:middle;}
