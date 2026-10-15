@@ -12,6 +12,7 @@ const REASON_SCHEMA_KEY='dcm-action-reason-schema-v2';
 const REQUIRED_API_VERSION='20261008-seven-reasons-fast-v3';
 const REPAIR_SESSION_KEY='dcm-action-validation-repaired-v2';
 const PENDING_KEY='dcm-action-master-pending-v1';
+const ACTIVE_ACTION_FIELDS=['reasonCode','plan','status'];
 const originalSetItem=Storage.prototype.setItem;
 let suppressSync=false,pollTimer=null,snapshotTimer=null,lastMeta=null,lastPullAt=0,lastEditAt=0,syncBroken=false,serverReady=false,repairing=false,flushingPending=false;
 const $=id=>document.getElementById(id);
@@ -53,7 +54,7 @@ function currentMonth(data){return $('month')?.value||months(data).slice(-1)[0]|
 function scoped(data,m){const manager=$('manager')?.value||'전체',outlet=$('outlet')?.value||'전체';return data.filter(r=>r.month===m&&(manager==='전체'||r.manager===manager)&&(outlet==='전체'||r.outlet===outlet));}
 function stableActions(actions){return (actions||[]).map(a=>({key:a.key||'',priority:a.priority||'',businessName:a.businessName||'',outlet:a.outlet||'',manager:a.manager||'',aging:a.aging||'',reasonCode:a.reasonCode||'',plan:a.plan||'',dueDate:a.dueDate||'',status:a.status||'TODO',modifiedBy:a.modifiedBy||'',updatedAt:a.updatedAt||'',partnerAction:a.partnerAction||null})).sort((a,b)=>String(a.key).localeCompare(String(b.key)));}
 function actionHash(actions){return hash(stableActions(actions));}
-function editableSig(a){return hash([a?.reasonCode||'',a?.plan||'',a?.dueDate||'',a?.status||'TODO']);}
+function editableSig(a){return hash([a?.reasonCode||'',a?.plan||'',a?.status||'TODO']);}
 function setStatus(text,state='idle',meta){const el=$('ctSyncStatus');if(!el)return;el.className=`ct-sync-status ${state}`;el.textContent=text;if(meta!==undefined){lastMeta=meta;const m=$('ctSyncMeta');if(m)m.textContent=meta||'';}}
 function installUI(){
  const board=[...document.querySelectorAll('.ct-panel')].find(x=>x.querySelector('h2')?.textContent.includes('Action Board'));
@@ -152,7 +153,7 @@ async function syncReasonsIfNeeded(force=false){
 }
 
 function pendingEdits(){
- try{const x=JSON.parse(localStorage.getItem(PENDING_KEY)||'[]');return Array.isArray(x)?x:[];}catch(e){return [];}
+ try{const x=JSON.parse(localStorage.getItem(PENDING_KEY)||'[]');return Array.isArray(x)?x.map(a=>({...a,changedFields:(a.changedFields||[]).filter(f=>ACTIVE_ACTION_FIELDS.includes(f))})).filter(a=>a.changedFields.length):[];}catch(e){return [];}
 }
 function stagePendingEdits(changes){
  const map=new Map(pendingEdits().filter(a=>a&&a.key).map(a=>[a.key,a]));
@@ -163,9 +164,9 @@ function stagePendingEdits(changes){
      if(a[f]!==undefined)old[f]=a[f];
    });
    const fields=Array.isArray(a.changedFields)?a.changedFields:
-     ['reasonCode','plan','dueDate','status'].filter(f=>Object.prototype.hasOwnProperty.call(a,f));
+     ACTIVE_ACTION_FIELDS.filter(f=>Object.prototype.hasOwnProperty.call(a,f));
    fields.forEach(f=>{
-     if(!['reasonCode','plan','dueDate','status'].includes(f))return;
+     if(!ACTIVE_ACTION_FIELDS.includes(f))return;
      old[f]=String(a[f]??'');
      if(!old.changedFields.includes(f))old.changedFields.push(f);
    });
@@ -291,7 +292,7 @@ Storage.prototype.setItem=function(k,v){
  try{
    const after=JSON.parse(v);if(!Array.isArray(after))return;
    const beforeMap=new Map(before.map(a=>[a.key,a]));
-   const fields=['reasonCode','plan','dueDate','status'];
+   const fields=ACTIVE_ACTION_FIELDS;
    const changed=after.filter(a=>a?.key).map(a=>{
      const old=beforeMap.get(a.key),changedFields=fields.filter(f=>{
        const v=a[f]??(f==='status'?'TODO':''),p=old?.[f]??(f==='status'?'TODO':'');
