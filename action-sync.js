@@ -299,52 +299,65 @@ async function pushRiskSnapshot(force=false){
 }
 function scheduleRiskSnapshot(delay=900,force=false){if(snapshotTimer)clearTimeout(snapshotTimer);snapshotTimer=setTimeout(()=>pushRiskSnapshot(force),delay);}
 function isEditing(){return !!document.activeElement?.closest?.('#ctActionBody')||Date.now()-lastEditAt<8000;}
-async function pullRemote(force=false,forceRepair=false){
+async function pullRemote(force=false){
  try{
-   installUI();if(!endpoint()){setStatus('Apps Script URL 대기','error');return false;}if(!token()){setStatus('공유키 입력 필요','idle');return false;}
-   if(!force&&(syncBroken||document.visibilityState!=='visible'||isEditing()))return false;
-   setStatus('동기화 확인 중…','working');
-   let json=await post({type:'load'});
-   if(json.version!==REQUIRED_API_VERSION){
-     serverReady=false;syncBroken=true;
-     setStatus('서버 구버전 · 저장 차단','error',
-       'Apps Script /exec가 '+(json.version||'버전 정보 없음')+'을(를) 실행 중입니다. 최신 Code.gs로 기존 배포를 새 버전 업데이트해 주세요.');
-     return false;
-   }
-   if(forceRepair){
-     repairing=true;
-     try{
-       const repaired=await post({type:'repairReasonValidation'});
-       if(!repaired.repaired||repaired.version!==REQUIRED_API_VERSION||
-          repaired.audit?.H31?.allowInvalid!==true||repaired.audit?.H110?.allowInvalid!==true||
-          repaired.audit?.H31?.validSeven!==true||repaired.audit?.H110?.validSeven!==true)
-         throw new Error('H31/H110의 7개 선택지 복구를 확인하지 못했습니다.');
-     }finally{repairing=false;}
-   }
-   // Normal polling must not mutate column validation.
-   serverReady=true;syncBroken=false;
-   if(pendingEdits().length){
-     const saved=await flushPendingEdits();
-     if(!saved)return false; // Never overwrite locally changed fields with an older server snapshot.
-     json=await post({type:'load'});
-   }
-   lastPullAt=Date.now();
-   // Only canonical 01-07 options are served from action-sync-config.js; ignore older 08 metadata.
-   const remote=Array.isArray(json.actions)?json.actions:[],local=getLocalActions();
-   const rHash=actionHash(remote),lHash=actionHash(local);const meta=json.updatedAt?`마지막 수정: ${json.updatedBy||'-'} · ${new Date(json.updatedAt).toLocaleString('ko-KR')}`:'공용 데이터 없음';
-   if(remote.length&&rHash!==lHash){
-     if(isEditing()&&!force){setStatus('새 공용 데이터 있음','working',meta);return;}
-     suppressSync=true;originalSetItem.call(localStorage,ACTION_KEY,JSON.stringify(remote));suppressSync=false;sessionStorage.setItem(REMOTE_HASH_KEY,rHash);
-     window.dispatchEvent(new CustomEvent('dcm-action-sync-applied',{detail:{actions:remote}}));
-     setStatus('공용 데이터 반영 ✓','ok',meta);
-   }else setStatus('동기화됨 ✓','ok',meta);
-   syncReasonOptions();syncBroken=false;return true;
- }catch(e){
-   console.warn('[DCM Action Sync] pull failed',e);
-   if(e.status===404)syncBroken=true;
-   serverReady=false;
-   setStatus(e.status===404?'공용 Sync 실패 · 앱스크립트 배포 주소 확인 필요':'H열 검증/공용 Sync 실패','error',e.message);
+  installUI();
+  if(!endpoint()){setStatus('Apps Script 연동 주소 미설정','error');return false;}
+  if(!token()){setStatus('공용키 로그인 필요','idle');return false;}
+  if(!force&&(syncBroken||!signedIn||document.visibilityState!=='visible'||isEditing()))return false;
+  setStatus('Google Sheets 연결 확인 중…','working','Apps Script에 인증된 POST 요청을 전송하고 있습니다.');
+  const json=await post({type:'load'});
+  if(json.version!==REQUIRED_API_VERSION){
+   serverReady=false;syncBroken=true;
+   setStatus('연동 서버 버전 불일치','error',
+    '현재 앱스크립트 배포: '+(json.version||'버전 정보 없음')+' / 필요: '+REQUIRED_API_VERSION+
+    ' · 관리자가 기존 배포를 최신 버전으로 업데이트해야 합니다.');
    return false;
+  }
+  serverReady=true;syncBroken=false;signedIn=true;
+  renderLoginUI();updateEditAccess();
+  const pending=pendingEdits().length;
+  if(pending){
+   // A successful login must not fail or overwrite unsent edits just because
+   // an editor PIN has not yet been entered. Upload is a separate explicit action.
+   lastPullAt=Date.now();
+   setStatus('연결됨 · 미전송 수정 '+pending+'건 보존','working',
+     '공용 조회 인증은 성공했습니다. 수정 PIN을 적용하고 미전송 저장을 눌러주세요.');
+   return true;
+  }
+  lastPullAt=Date.now();
+  const remote=Array.isArray(json.actions)?json.actions:[],local=getLocalActions();
+  const rHash=actionHash(remote),lHash=actionHash(local);
+  const meta=json.updatedAt?
+   '마지막 수정: '+(json.updatedBy||'-')+' · '+new Date(json.updatedAt).toLocaleString('ko-KR'):
+   '공용 조치 데이터 조회 정상';
+  if(remote.length&&rHash!==lHash){
+   if(isEditing()&&!force){setStatus('새 공용 데이터 있음','working',meta);return true;}
+   suppressSync=true;
+   originalSetItem.call(localStorage,ACTION_KEY,JSON.stringify(remote));
+   suppressSync=false;sessionStorage.setItem(REMOTE_HASH_KEY,rHash);
+   window.dispatchEvent(new CustomEvent('dcm-action-sync-applied',{detail:{actions:remote}}));
+   setStatus('공용 데이터 반영 완료','ok',meta);
+  }else setStatus('Google Sheets 연결됨','ok',meta);
+  syncReasonOptions();
+  return true;
+ }catch(e){
+  console.warn('[DCM Action Sync] load failed',e);
+  serverReady=false;signedIn=false;
+  const message=String(e?.message||'요청 실패');
+  const wrongKey=message.includes('공유키가 올바르지 않습니다')||
+   message.includes('DCM_SYNC_KEY가 설정되지 않았습니다');
+  if(e.status===404)syncBroken=true;
+  if(wrongKey){
+   sessionStorage.removeItem(SESSION_TOKEN_KEY);sessionStorage.removeItem(SESSION_EDITOR_KEY);
+   setStatus('공유키 로그인 실패','error',
+     message+' · 실제 Apps Script 배포의 DCM_SYNC_KEY 설정값을 확인해 주세요. H열 규칙과는 별개입니다.');
+  }else{
+   setStatus(e.status===404?'Apps Script 배포 주소 오류':
+     message.includes('시간 초과')?'서버 응답 시간 초과':'공용 Sync 연결 실패','error',message);
+  }
+  renderLoginUI();updateEditAccess();
+  return false;
  }
 }
 Storage.prototype.setItem=function(k,v){
@@ -366,12 +379,18 @@ Storage.prototype.setItem=function(k,v){
 };
 function start(){
  // Preserve historic user-selected reason codes; remapping is not safe without server mapping.
- migrateRetiredReason08();installUI();observeBoard();
- // Google Sheets Config is the source of truth; never overwrite it from the browser.
- pullRemote(false).then(ok=>{if(ok)scheduleRiskSnapshot(1400,false);});
+ migrateRetiredReason08();
+ // The previous browser-persisted shared secret caused stale-key login loops.
+ localStorage.removeItem(LEGACY_TOKEN_KEY);
+ if(sessionStorage.getItem(SESSION_EDITOR_KEY)!==editor()){
+  sessionStorage.removeItem(SESSION_TOKEN_KEY);sessionStorage.removeItem(EDITOR_PIN_SESSION);
+ }
+ installUI();observeBoard();
+ if(token())pullRemote(true).then(ok=>{if(ok)scheduleRiskSnapshot(1400,false);});
+ else setStatus('로그인 필요','idle','담당자 선택 후 공유키를 입력하고 로그인 버튼을 눌러주세요.');
  if(pollTimer)clearInterval(pollTimer);const poll=Math.max(30000,Number(CFG.pollMs)||30000);pollTimer=setInterval(()=>pullRemote(false),poll);
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastPullAt>poll)pullRemote(false);});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(start,100),{once:true});else setTimeout(start,100);
-window.DCMActionSync={pull:()=>pullRemote(true),repair:()=>pullRemote(true,true),push:()=>flushPendingEdits(),pushRisk:()=>pushRiskSnapshot(true),allRisk:()=>allRiskRows(),srmRows:()=>getData(),srmActions:()=>getLocalActions(),canEditFor,editorName:()=>editor(),srmRequest:payload=>post({...payload,actor:editor()}),reasons:REASONS};
+window.DCMActionSync={pull:()=>pullRemote(true),push:()=>flushPendingEdits(),pushRisk:()=>pushRiskSnapshot(true),allRisk:()=>allRiskRows(),srmRows:()=>getData(),srmActions:()=>getLocalActions(),canEditFor,editorName:()=>editor(),isConnected:()=>signedIn,srmRequest:payload=>post({...payload,actor:editor()}),reasons:REASONS};
 })();
