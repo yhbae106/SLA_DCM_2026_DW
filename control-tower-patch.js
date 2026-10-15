@@ -5,11 +5,19 @@ const PAGE_SIZE=50;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>'\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]));
 const statusLabel=s=>({TODO:'미조치',IN_PROGRESS:'진행중',WAITING:'업체회신',DONE:'완료'})[s]||'미조치';
-let actionOpen=true,actionLimit=PAGE_SIZE,actionTimer=null,actionView='x',actionEntity='all',actionPriority='all',actionSearch='',activeKpi=null;
-const ACTION_VIEWS={x:'우선 조치 필요처',persist:'2개월 이상 지속 X',all3:'3개사 모두 X',improved:'X→O 개선 거래처',worsened:'O→X 악화 거래처',new:'선택월 신규 도도매',stopped:'선택월 중단 도도매',history:'월별 조치 이력',supply:'도도매 공급처 전체'};
+let actionOpen=true,actionLimit=PAGE_SIZE,actionTimer=null,actionView='supply',actionBase='supply',actionDetail='all',actionPriority='all',actionSearch='',activeKpi=null;
+const DETAIL_VIEWS=['persist','all3','improved','worsened','new','stopped'];
+const ACTION_VIEWS={x:'우선 조치 필요처',persist:'2개월 이상 지속 X',all3:'3개사 모두 X',improved:'X→O 개선 거래처',worsened:'O→X 악화 거래처',new:'신규 공급처',stopped:'중단 공급처',history:'월별 조치 이력',supply:'전체 거래처'};
 const KPI_VIEWS={rate:'supply',unlinked:'x',need:'x',persistent:'persist',all3:'all3',improved:'improved',worsened:'worsened',supply:'supply'};
-function scopedViewLabel(v,m){if(v!=='new'&&v!=='stopped')return ACTION_VIEWS[v]||ACTION_VIEWS.x;const n=/^\d{4}-(0[1-9]|1[0-2])$/.test(m)?Number(m.slice(5))+'월':'선택월';return n+' '+(v==='new'?'신규':'중단')+' 도도매';}
-function syncActionViewOptions(m){const el=$('ctActionView');if(!el?.options)return;const seen=new Set();[...el.options].forEach(o=>{if(!ACTION_VIEWS[o.value]||seen.has(o.value))o.remove();else{seen.add(o.value);o.textContent=scopedViewLabel(o.value,m);}});}
+function scopedViewLabel(v,m){if(v!=='new'&&v!=='stopped')return ACTION_VIEWS[v]||ACTION_VIEWS.supply;const n=/^\d{4}-(0[1-9]|1[0-2])$/.test(m)?Number(m.slice(5))+'월':'선택월';return n+' '+ACTION_VIEWS[v];}
+function syncActionViewOptions(){
+ const el=$('ctActionDetail');if(!el?.options)return;
+ const expected=new Set(['all',...DETAIL_VIEWS]),seen=new Set();
+ [...el.options].forEach(o=>{
+  if(!expected.has(o.value)||seen.has(o.value))o.remove();
+  else{seen.add(o.value);o.textContent=o.value==='all'?'전체':ACTION_VIEWS[o.value];}
+ });
+}
 function ensureHeroKpis(){
   const grid=document.querySelector('.ct-hero .ct-kpis');if(!grid)return;
   const rate=$('ctRate')?.closest('.ct-kpi'),delta=$('ctDelta')?.closest('.ct-kpi'),x=$('ctX')?.closest('.ct-kpi'),x2o=$('ctX2O')?.closest('.ct-kpi'),o2x=$('ctO2X')?.closest('.ct-kpi'),persist=$('ctPersist')?.closest('.ct-kpi'),all3=$('ctAll3')?.closest('.ct-kpi');
@@ -207,7 +215,7 @@ function renderAllXActionBoard(){
  const tbody=$('ctActionBody');if(!actionOpen||!tbody)return;
  const L=window.DCMLogic,E=L?.E||[],ctx=buildBoardContext();
  syncActionViewOptions(ctx.month);
- const rows=filterUnifiedRows(ctx,actionView,actionEntity,actionPriority,actionSearch),visible=rows.slice(0,actionLimit);
+ const rows=filterUnifiedRows(ctx,actionView,'all',actionPriority,actionSearch),visible=rows.slice(0,actionLimit);
  const reasons=window.DCM_ACTION_REASONS||{};
  const historicalField=(a,field)=>{
     const value=a?.[field]||'';
@@ -249,10 +257,12 @@ function renderAllXActionBoard(){
 }
 function scheduleActionRender(delay=100){clearTimeout(actionTimer);actionTimer=setTimeout(renderAllXActionBoard,delay);}
 function setActionView(view,{scroll=true,kpi=null}={}){
- actionView=Object.hasOwn(ACTION_VIEWS,view)?view:'x';activeKpi=kpi;
- actionEntity='all';actionPriority='all';actionSearch='';actionLimit=PAGE_SIZE;
- if($('ctActionView'))$('ctActionView').value=actionView;
- if($('ctActionEntity'))$('ctActionEntity').value='all';
+ actionView=Object.hasOwn(ACTION_VIEWS,view)?view:'supply';activeKpi=kpi;
+ actionDetail=DETAIL_VIEWS.includes(actionView)?actionView:'all';
+ actionBase=actionView==='x'?'x':'supply';
+ actionPriority='all';actionSearch='';actionLimit=PAGE_SIZE;
+ if($('ctActionView'))$('ctActionView').value=actionBase;
+ if($('ctActionDetail'))$('ctActionDetail').value=actionDetail;
  if($('ctActionPriority'))$('ctActionPriority').value='all';
  if($('ctActionSearch'))$('ctActionSearch').value='';
  renderAllXActionBoard();
@@ -260,15 +270,25 @@ function setActionView(view,{scroll=true,kpi=null}={}){
 }
 function installAllXBoard(){
  const tbody=$('ctActionBody');if(!tbody)return;ensureActionControls();
- for(const [id,variable] of [['ctActionView','view'],['ctActionEntity','entity'],['ctActionSearch','search']]){
+ for(const [id,variable] of [['ctActionView','base'],['ctActionDetail','detail'],['ctActionSearch','search']]){
   const el=$(id);if(!el)continue;
   el.addEventListener(variable==='search'?'input':'change',()=>{
-   actionView=$('ctActionView')?.value||'x';actionEntity=$('ctActionEntity')?.value||'all';
-   actionPriority=$('ctActionPriority')?.value||'all';actionSearch=$('ctActionSearch')?.value||'';
+   if(variable==='base'){
+    actionBase=$('ctActionView')?.value==='x'?'x':'supply';
+    actionDetail='all';
+   }else if(variable==='detail'){
+    const detail=$('ctActionDetail')?.value||'all';
+    actionDetail=DETAIL_VIEWS.includes(detail)?detail:'all';
+    if(actionDetail!=='all')actionBase='supply';
+   }
+   actionView=actionDetail==='all'?actionBase:actionDetail;
+   if($('ctActionView'))$('ctActionView').value=actionBase;
+   if($('ctActionDetail'))$('ctActionDetail').value=actionDetail;
+   actionPriority='all';actionSearch=$('ctActionSearch')?.value||'';
    activeKpi=null;actionLimit=PAGE_SIZE;scheduleActionRender(variable==='search'?75:0);
   });
  }
- $('ctActionClear')?.addEventListener('click',()=>setActionView('x',{scroll:false}));
+ $('ctActionClear')?.addEventListener('click',()=>setActionView('supply',{scroll:false}));
  document.querySelectorAll('.ct-hero .ct-kpi[data-kpi]').forEach(card=>{
   const view=KPI_VIEWS[card.dataset.kpi];if(!view)return;
   card.setAttribute('role','button');card.tabIndex=0;card.setAttribute('aria-controls','ctAction');
