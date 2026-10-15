@@ -59,7 +59,7 @@ const el=id=>{
 for(const [id,v] of [['manager','전체'],['outlet','전체'],['month','2026-09'],
  ['ctActionView','supply'],['ctActionDetail','all'],['ctActionSearch','']])el(id).value=v;
 el('ctActionDetail').options=optionsFor('ctActionDetail').map(o=>({...o,textContent:o.label,remove(){}}));
-el('ctAction');
+el('ctAction');el('ctActionClear');
 const localStorage={getItem(k){
  if(k==='dcm-dashboard-v8-data')return JSON.stringify(data);
  if(k==='dcm-dashboard-v10-actions')return '[]';
