@@ -21,21 +21,30 @@ function render(){
  const result=window.DCMSRMAggregate?.build({actions:actionRows(),history:archive?.forMonth?.(month)||[],
    events,month,latestMonth:months[months.length-1]||month})||{stats:{},records:[]};
  const stats=result.stats,records=result.records,loaded=raw.length>0;
- const numbers={srmManaged:stats.total,srmMaster:stats.master,srmPartner:stats.partner,
-  srmOpen:stats.progress,srmErp:stats.erp,srmOverdue:stats.overdue,srmDone:stats.done,
-  srmVerified:stats.verified,srmDisputes:stats.dispute};
- for(const [id,n] of Object.entries(numbers))if($(id))$(id).textContent=loaded?Number(n||0).toLocaleString():'—';
- const match=r=>filter==='all'||filter==='open'&&!r.done||filter==='progress'&&r.progress||
-  filter==='erp'&&r.erpRelated||filter==='overdue'&&r.overdue||filter==='done'&&r.done||
+ const numbers={srmManaged:stats.total,srmNeedsAction:stats.needsAction,srmConsulted:stats.srm,
+  srmOpen:stats.progress,srmDone:stats.done,srmVerified:stats.verified};
+ for(const [id,n] of Object.entries(numbers))if($(id)){
+  const needsHistory=['srmConsulted','srmOpen','srmDone'].includes(id);
+  $(id).textContent=!loaded||(!ready&&needsHistory)?'—':Number(n||0).toLocaleString();
+ }
+ const match=r=>filter==='all'||filter==='open'&&r.needsAction||filter==='consulted'&&r.events.length>0||
+  filter==='progress'&&r.progress||filter==='erp'&&r.erpRelated||filter==='done'&&r.done||
   filter==='verified'&&r.verified||filter==='dispute'&&r.dispute||filter==='stopped'&&r.stop;
- const list=records.filter(match),now=latest();
+ const list=records.filter(match),now=new Map(raw.filter(r=>r.month===month).map(r=>[r.outlet+'|||'+r.businessNo,r]));
  if($('srmCount'))$('srmCount').textContent=loaded?month+' · '+list.length+'처 / 관리 '+records.length+'처':'DCM 데이터 불러오는 중';
  $('srmBody').innerHTML=list.slice(0,100).map(r=>{
-   const row=now.get(r.key),ox=E.map(e=>row?.statuses?.[e]||'—').join(' / ');
-   const origin=r.source==='monthly'?'월별 사후 이력':r.source==='live'?'기존 Action':'SRM 협의';
-   return '<tr><td><button class="srm-link" data-srm-open="'+esc(r.key)+'" data-srm-entity="'+esc(r.entity||E[0])+'">'+esc(r.businessName||r.businessNo)+'</button><small>'+esc(r.outlet)+' · '+esc(r.businessNo)+'</small></td><td>'+esc(ox)+'</td><td>'+esc(origin)+(r.masterFilled?' · 마스터':'')+(r.partnerFilled?' · 업체':'')+'</td><td>'+esc(r.statusLabel)+'</td><td>'+esc(r.erpVendor||(r.erpRelated?'ERP 관련(업체 미확인)':'—'))+'</td><td>'+esc(r.dueDate||'—')+'</td><td>'+esc(r.nextAction||'—')+'</td></tr>';
- }).join('')||'<tr><td colspan="7">'+(loaded?'조건에 해당하는 거래처가 없습니다.':'DCM 데이터 불러오는 중')+'</td></tr>';
- if($('srmSourceNote'))$('srmSourceNote').textContent='월별 DCM 및 기존 Action 입력 기준 · 마스터 '+(stats.master||0)+'처 / 업체 '+(stats.partner||0)+'처 · 사후분류와 당시 수행 증빙은 구분';
+   const row=now.get(r.key),ox=row?E.map(e=>row.statuses?.[e]||'—').join(' / '):
+    (r.oxSnapshot?r.oxSnapshot.split('/').join(' / '):'— / — / —');
+   const origin=r.source==='monthly'?'월별 DCM 사후분류':r.source==='live'?'실제 Action 입력':'SRM 협의';
+   const evidence=(r.masterFilled?' · 마스터':'')+(r.partnerFilled?' · 업체':'')+(r.events.length?' · 협의 이력':'');
+   return '<tr><td data-label="거래처"><button class="srm-link" data-srm-open="'+esc(r.key)+'" data-srm-entity="'+esc(r.entity||E[0])+'">'+esc(r.businessName||r.businessNo)+'</button><small>'+esc(r.outlet)+' · '+esc(r.businessNo)+'</small></td>'+
+     '<td data-label="3사 O/X">'+esc(ox)+'</td><td data-label="입력 근거">'+esc(origin+evidence)+'</td>'+
+     '<td data-label="관리 상태">'+esc(r.statusLabel)+'</td><td data-label="ERP 업체">'+esc(r.erpVendor||'—')+'</td>'+
+     '<td data-label="다음 조치">'+esc(r.nextAction||'—')+'</td></tr>';
+ }).join('')||'<tr><td colspan="6" class="srm-empty">'+(loaded?'조건에 해당하는 거래처가 없습니다.':'DCM 데이터 불러오는 중')+'</td></tr>';
+ if($('srmSourceNote'))$('srmSourceNote').textContent=
+  '월별 DCM 사후분류 '+(stats.retrospective||0)+'처는 실제 협의·조치 완료 증빙으로 계산하지 않습니다.'+
+  (ready?'':' · SRM 협의 이력 미조회(최신 이력 선택)');
 }
 async function refresh(){
  if(loading||!request)return;
@@ -50,8 +59,8 @@ async function refresh(){
 function months(k){return [...new Set(source().filter(r=>r.outlet+'|||'+r.businessNo===k&&r.month).map(r=>r.month))].sort();}
 function history(){
  const cs=events.filter(e=>e.key===selected&&e.entity===entity),last=cs[cs.length-1];
- $('srmHistory').innerHTML=cs.slice(-30).reverse().map(e=>'<div class="srm-event"><strong>'+esc(e.updatedAt)+' · '+esc(e.actor)+' · '+esc(labels[e.status])+'</strong><div>'+esc(e.contactTarget||'')+' · '+esc(e.erpVendor||'')+'</div><div>'+esc(e.detail||'')+'</div><small>다음 조치: '+esc(e.nextAction||'—')+' / 책임자: '+esc(e.owner||'—')+' / 기한: '+esc(e.dueDate||'—')+'</small></div>').join('')||'<p>아직 협의 이력이 없습니다.</p>';
- if(last&&!$('srmForm').dataset.dirty)['reason','erpVendor','contactTarget','nextAction','owner','dueDate','baselineMonth'].forEach(f=>{if(last[f]&&$('srm-'+f))$('srm-'+f).value=last[f];});
+ $('srmHistory').innerHTML=cs.slice(-30).reverse().map(e=>'<div class="srm-event"><strong>'+esc(e.updatedAt)+' · '+esc(e.actor)+' · '+esc(labels[e.status])+'</strong><div>'+esc(e.contactTarget||'')+' · '+esc(e.erpVendor||'')+'</div><div>'+esc(e.detail||'')+'</div><small>다음 조치: '+esc(e.nextAction||'—')+' / 책임자: '+esc(e.owner||'—')+'</small></div>').join('')||'<p>아직 협의 이력이 없습니다.</p>';
+ if(last&&!$('srmForm').dataset.dirty)['reason','erpVendor','contactTarget','nextAction','owner','baselineMonth'].forEach(f=>{if(last[f]&&$('srm-'+f))$('srm-'+f).value=last[f];});
 }
 function open(k,e='대웅제약'){
  if(!k?.includes('|||'))return;const changedCase=selected!==k||entity!==e;selected=k;entity=E.includes(e)?e:E[0];if(changedCase)$('srmForm').dataset.requestId='';
@@ -63,7 +72,7 @@ function open(k,e='대웅제약'){
  try{const saved=JSON.parse(localStorage.getItem(draftKey())||'null');if(saved)Object.entries(saved).forEach(([f,v])=>{if($('srm-'+f))$('srm-'+f).value=v;});}catch(_){}
  $('srmEditor').hidden=false;history();$('srmWorkflow').scrollIntoView({behavior:'smooth',block:'start'});if(!ready)void refresh();
 }
-function draft(){const x={};['status','eventType','reason','erpVendor','contactTarget','detail','nextAction','owner','dueDate','baselineMonth'].forEach(k=>x[k]=$('srm-'+k).value);try{localStorage.setItem(draftKey(),JSON.stringify(x));}catch(_){}return x;}
+function draft(){const x={};['status','eventType','reason','erpVendor','contactTarget','detail','nextAction','owner','baselineMonth'].forEach(k=>x[k]=$('srm-'+k).value);try{localStorage.setItem(draftKey(),JSON.stringify(x));}catch(_){}return x;}
 async function submit(ev){
  ev.preventDefault();if(loading||!selected)return;
  const values=draft(),prior=events.filter(e=>e.key===selected&&e.entity===entity);
