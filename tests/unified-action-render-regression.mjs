@@ -108,13 +108,13 @@ const expectRows=(count,label)=>{
 };
 // The actual browser change handlers must keep the two filters mutually coherent.
 sandbox.__boardRegression.init();
-assert.deepEqual(sandbox.__boardRegression.state(),{base:'supply',detail:'all',view:'supply'});
+assert.deepEqual({...sandbox.__boardRegression.state()},{base:'supply',detail:'all',view:'supply'});
 el('ctActionView').value='x';
 domListeners.get('ctActionView:change')();
-assert.deepEqual(sandbox.__boardRegression.state(),{base:'x',detail:'all',view:'x'});
+assert.deepEqual({...sandbox.__boardRegression.state()},{base:'x',detail:'all',view:'x'});
 el('ctActionDetail').value='improved';
 domListeners.get('ctActionDetail:change')();
-assert.deepEqual(sandbox.__boardRegression.state(),{base:'supply',detail:'improved',view:'improved'});
+assert.deepEqual({...sandbox.__boardRegression.state()},{base:'supply',detail:'improved',view:'improved'});
 assert.equal(el('ctActionView').value,'supply',
  'O-only improvements must not be accidentally filtered by current X status');
 sandbox.__boardRegression.render();expectRows(1,'X-to-O detail includes O-only improvement');
@@ -122,16 +122,16 @@ el('ctActionView').value='x';
 domListeners.get('ctActionView:change')();
 assert.equal(el('ctActionDetail').value,'all',
  'A new base selection must clear an incompatible detail filter');
-assert.deepEqual(sandbox.__boardRegression.state(),{base:'x',detail:'all',view:'x'});
+assert.deepEqual({...sandbox.__boardRegression.state()},{base:'x',detail:'all',view:'x'});
 el('ctActionDetail').value='stopped';
 domListeners.get('ctActionDetail:change')();
-assert.deepEqual(sandbox.__boardRegression.state(),{base:'supply',detail:'stopped',view:'stopped'});
+assert.deepEqual({...sandbox.__boardRegression.state()},{base:'supply',detail:'stopped',view:'stopped'});
 assert.equal(el('ctActionView').value,'supply');
 el('ctActionSearch').value='0009';
 domListeners.get('ctActionSearch:input')();
 assert.equal(sandbox.__boardRegression.state().detail,'stopped','Search must preserve selected detail');
 domListeners.get('ctActionClear:click')();
-assert.deepEqual(sandbox.__boardRegression.state(),{base:'supply',detail:'all',view:'supply'});
+assert.deepEqual({...sandbox.__boardRegression.state()},{base:'supply',detail:'all',view:'supply'});
 assert.equal(el('ctActionSearch').value,'');
 sandbox.__boardRegression.default();expectRows(50,'Default 50 results');
 sandbox.__boardRegression.more();expectRows(100,'50 more results');
