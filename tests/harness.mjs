@@ -15,8 +15,9 @@ ok('all index assets exist');
 if(html.includes('cdn.sheetjs.com'))fail('SheetJS must not be eagerly loaded');
 ok('SheetJS is lazy-loaded');
 
-const required=['manager','outlet','month','fileInput','kpiRate','ctRate','ctActionBody','ctActionView','ctActionEntity','ctActionSearch','ctActionCount','needBody','changeBody'];
+const required=['manager','outlet','month','fileInput','kpiRate','ctRate','ctActionBody','ctActionView','ctActionDetail','ctActionSearch','ctActionCount','needBody','changeBody'];
 for(const id of required)if(!html.includes('id="'+id+'"'))fail('Missing required DOM id: '+id);
+if(html.includes('id="ctActionEntity"'))fail('Redundant Action Board group-company filter returned');
 ok('required dashboard DOM contract');
 const unifiedHeader=html.match(/<div class="table-scroll ct-board"><table><thead><tr>(.*?)<\/tr>/)?.[1]||'';
 if((unifiedHeader.match(/<th/g)||[]).length!==10||unifiedHeader.includes('완료 예정일'))fail('Master Action Board must have 10 visible columns without due date');
