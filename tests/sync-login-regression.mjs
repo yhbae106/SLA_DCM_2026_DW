@@ -53,6 +53,7 @@ let mode='incorrect',requests=[];
 const sandbox={window:null,document,localStorage,sessionStorage,Storage:Store,
  setTimeout(){return 1},clearTimeout(){},setInterval(){return 2},clearInterval(){},
  MutationObserver:class {observe(){}},
+ AbortController:class {constructor(){this.signal={};}abort(){}},
  CustomEvent:class{constructor(type,options){this.type=type;this.detail=options?.detail;}},
  fetch:async (_url,options)=>{
   const payload=JSON.parse(options.body);
