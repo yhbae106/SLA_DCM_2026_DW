@@ -79,7 +79,9 @@ function saveBoardField(k,field,value){
   if($('ctSyncStatus'))$('ctSyncStatus').textContent='수정 권한 없음 · 담당자 선택·개인 PIN 또는 기준월을 확인하세요.';
   renderAllXActionBoard();return;
  }
- const actions=localActions();let a=actions.find(x=>x.key===k);if(!a){const [outlet,businessNo]=k.split('|||');a={key:k,outlet,businessNo,history:[]};actions.push(a);}a[field]=value;a.updatedAt=new Date().toISOString();a.history=Array.isArray(a.history)?a.history:[];a.history.unshift({at:a.updatedAt,field,value});a.history=a.history.slice(0,50);localStorage.setItem(ACTION_KEY,JSON.stringify(actions));if(field==='reasonCode')renderReasonPareto();}
+ const actions=localActions();let a=actions.find(x=>x.key===k);if(!a){const [outlet,businessNo]=k.split('|||');a={key:k,outlet,businessNo,history:[]};actions.push(a);}a[field]=value;a.updatedAt=new Date().toISOString();a.history=Array.isArray(a.history)?a.history:[];a.history.unshift({at:a.updatedAt,field,value});a.history=a.history.slice(0,50);localStorage.setItem(ACTION_KEY,JSON.stringify(actions));
+ window.dispatchEvent(new CustomEvent('dcm-srm-data-changed'));
+ if(field==='reasonCode')renderReasonPareto();}
 function ensureActionControls(){
  const panel=$('ctAction'),tbody=$('ctActionBody');if(!panel||!tbody)return;
  panel.classList.add('ct-action-open','ct-action-unified');panel.classList.remove('ct-action-lazy','ct-action-collapsed');
@@ -222,7 +224,7 @@ function renderAllXActionBoard(){
   return '<td class="ct-ox-cell" data-label="'+esc(e)+'"><span class="ct-status-badge '+(st==='O'?'o':st==='X'?'x':'na')+'" title="'+esc(e)+' '+(st==='O'?'연동':st==='X'?'미연동':'미평가')+'">'+st+'</span></td>';
  };
  tbody.innerHTML=visible.map(r=>'<tr>'+
-  '<td class="ct-merchant" data-label="거래처"><strong>'+esc(r.businessName||'')+'</strong><small>'+esc(r.businessNo||'')+'</small>'+(r.monthlyHistorical?'<small class="ct-monthly-archive" title="DCM O/X 개선 결과 기반 사후 등록 이력">'+(r.historyType==='SUPPLY_STOP'?'공급 중단(사후 관리 분류)':'월별 X→O 조치 이력')+'</small>':'')+'<button type="button" class="srm-launch" data-srm-open="'+esc(r.key)+'">SRM 협의</button></td>'+
+  '<td class="ct-merchant" data-label="거래처"><strong>'+esc(r.businessName||'')+'</strong><small>'+esc(r.businessNo||'')+'</small>'+(r.monthlyHistorical?'<small class="ct-monthly-archive" title="DCM O/X 개선 결과 기반 사후 등록 이력">'+(r.historyType==='SUPPLY_STOP'?'공급 중단(사후 관리 분류)':'월별 X→O 조치 이력')+'</small>':'')+'<button type="button" class="srm-launch" data-srm-open="'+esc(r.key)+'">추가 협의</button></td>'+
   '<td data-label="업체/권역">'+esc(r.outlet||'')+'</td><td data-label="담당자">'+esc(r.manager||'')+'</td>'+
   E.map(e=>status(r,e)).join('')+
   '<td data-label="미연동 기간">'+esc(r.xCount?String(r.aging||'0M').replace(/M$/,'개월'):'—')+'</td>'+
