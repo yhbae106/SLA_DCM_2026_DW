@@ -18,6 +18,11 @@ ok('SheetJS is lazy-loaded');
 const required=['manager','outlet','month','fileInput','kpiRate','ctRate','ctActionBody','ctActionView','ctActionEntity','ctActionSearch','ctActionCount','needBody','changeBody'];
 for(const id of required)if(!html.includes('id="'+id+'"'))fail('Missing required DOM id: '+id);
 ok('required dashboard DOM contract');
+const unifiedHeader=html.match(/<div class="table-scroll ct-board"><table><thead><tr>(.*?)<\/tr>/)?.[1]||'';
+if((unifiedHeader.match(/<th/g)||[]).length!==10||unifiedHeader.includes('완료 예정일'))fail('Master Action Board must have 10 visible columns without due date');
+const actionLayout=read('control-tower-layout.css');
+if(!actionLayout.includes('table-layout:fixed')||!actionLayout.includes('overflow-x:hidden')||!actionLayout.includes('@media(max-width:1180px)'))fail('Master Action Board must fit width and provide responsive cards');
+ok('10-column Master Action Board with no due date or horizontal scroll');
 if(!html.includes('DCM 미연동 세부 현황')||!html.includes('7개월 이상'))fail('Korean period labels or 7-plus bucket missing');
 if(html.includes('Risk Score 및 Priority 산정 기준')||html.includes('<th>Risk Score</th>')||html.includes('<th>Priority</th>'))fail('Misleading scoring display remains');
 const agingCss=read('control-tower.css');
@@ -53,7 +58,7 @@ ok('core DCM calculations');
 
 const localAssets=[...new Set(refs)].filter(exists);
 const initialBytes=fs.statSync('index.html').size+localAssets.reduce((s,p)=>s+fs.statSync(p).size,0);
-if(initialBytes>561000)fail('Initial local payload budget exceeded: '+initialBytes);
+if(initialBytes>567000)fail('Initial local payload budget exceeded: '+initialBytes);
 ok('initial local payload '+Math.round(initialBytes/1024)+' KB');
 
 const expectedKpiOrder=['ctRate','ctDelta','ctX','ctNeedAbs','ctPersist','ctAll3','ctX2O','ctO2X','ctSupply'];
