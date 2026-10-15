@@ -214,21 +214,21 @@ function renderAllXActionBoard(){
     if(field==='status')return value?statusLabel(value):'—';
     return value||'—';
   };
-  const dual=(r,field)=>'<td class="ct-dual-cell"><div class="ct-master-entry"><b>마스터</b>'+
+  const dual=(r,field)=>'<td class="ct-dual-cell" data-label="'+({reasonCode:'원인',plan:'조치계획',status:'상태'}[field]||field)+'"><div class="ct-master-entry"><b>마스터</b>'+
    (r.monthlyHistorical?'<span class="ct-historical-value" title="DCM 개선 결과 기반 사후 정리">'+esc(historicalField(r.masterAction,field))+'</span>':
    (r.canEdit?masterInputMarkup(r,field):'<span class="ct-readonly" title="읽기 전용">'+esc(historicalField(r,field))+'</span>'))+
    '</div>'+readonlyPartnerMarkup(r,field)+'</td>';
  const status=(r,e)=>{
   const st=L.normStatus(r.statuses?.[e])||'—';
-  return '<td class="ct-ox-cell"><span class="ct-status-badge '+(st==='O'?'o':st==='X'?'x':'na')+'" title="'+esc(e)+' '+(st==='O'?'연동':st==='X'?'미연동':'미평가')+'">'+st+'</span></td>';
+  return '<td class="ct-ox-cell" data-label="'+esc(e)+'"><span class="ct-status-badge '+(st==='O'?'o':st==='X'?'x':'na')+'" title="'+esc(e)+' '+(st==='O'?'연동':st==='X'?'미연동':'미평가')+'">'+st+'</span></td>';
  };
  tbody.innerHTML=visible.map(r=>'<tr>'+
-  '<td class="ct-merchant"><strong>'+esc(r.businessName||'')+'</strong><small>'+esc(r.businessNo||'')+'</small>'+(r.monthlyHistorical?'<small class="ct-monthly-archive" title="DCM O/X 개선 결과 기반 사후 등록 이력">'+(r.historyType==='SUPPLY_STOP'?'공급 중단(사후 관리 분류)':'월별 X→O 조치 이력')+'</small>':'')+'<button type="button" class="srm-launch" data-srm-open="'+esc(r.key)+'">SRM 협의</button></td>'+
-  '<td>'+esc(r.outlet||'')+'</td><td>'+esc(r.manager||'')+'</td>'+
+  '<td class="ct-merchant" data-label="거래처"><strong>'+esc(r.businessName||'')+'</strong><small>'+esc(r.businessNo||'')+'</small>'+(r.monthlyHistorical?'<small class="ct-monthly-archive" title="DCM O/X 개선 결과 기반 사후 등록 이력">'+(r.historyType==='SUPPLY_STOP'?'공급 중단(사후 관리 분류)':'월별 X→O 조치 이력')+'</small>':'')+'<button type="button" class="srm-launch" data-srm-open="'+esc(r.key)+'">SRM 협의</button></td>'+
+  '<td data-label="업체/권역">'+esc(r.outlet||'')+'</td><td data-label="담당자">'+esc(r.manager||'')+'</td>'+
   E.map(e=>status(r,e)).join('')+
-  '<td>'+esc(r.xCount?String(r.aging||'0M').replace(/M$/,'개월'):'—')+'</td>'+
-  ['reasonCode','plan','dueDate','status'].map(f=>dual(r,f)).join('')+'</tr>').join('')||
-  '<tr><td colspan="11" class="empty">선택한 조건에 해당하는 거래처가 없습니다. 필터를 변경해 주세요.</td></tr>';
+  '<td data-label="미연동 기간">'+esc(r.xCount?String(r.aging||'0M').replace(/M$/,'개월'):'—')+'</td>'+
+  ['reasonCode','plan','status'].map(f=>dual(r,f)).join('')+'</tr>').join('')||
+  '<tr><td colspan="10" class="empty">선택한 조건에 해당하는 거래처가 없습니다. 필터를 변경해 주세요.</td></tr>';
  tbody.querySelectorAll('[data-allx-field]').forEach(el=>el.addEventListener('change',()=>{
   saveBoardField(el.dataset.key,el.dataset.allxField,el.value);
  }));
