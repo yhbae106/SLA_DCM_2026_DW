@@ -283,6 +283,15 @@ function installAllXBoard(){
  window.addEventListener('storage',e=>{if(e.key===ACTION_KEY||e.key===DATA_KEY)scheduleActionRender(80);});
  renderAllXActionBoard();
 }
-window.DCMUnifiedAction={filter:filterUnifiedRows,build:buildBoardContext,select:setActionView,label:scopedViewLabel};
+window.DCMUnifiedAction={
+ filter:filterUnifiedRows,build:buildBoardContext,select:setActionView,label:scopedViewLabel,
+ viewRows:()=>buildBoardContext().rows.map(r=>{
+  const m=r.monthlyHistorical?r.masterAction||{}:r;
+  const p=r.partnerAction||{};
+  return {key:r.key,masterStatus:m.status||'',
+   partnerStatus:(p.editedFields||[]).includes('status')?p.status||'':'',
+   monthlyHistorical:!!r.monthlyHistorical};
+ })
+};
 window.addEventListener('load',()=>{installLayout();installChangeFilterFix();installAllXBoard();renderReasonPareto();setTimeout(syncHeroSupportKpis,120);const old=document.getElementById('resetBtn');if(!old)return;const b=old.cloneNode(true);old.replaceWith(b);b.onclick=()=>{if(!confirm('브라우저에 추가한 월별 데이터와 Action 이력을 지우고 최초 6월/7월 데이터로 복원할까요?'))return;localStorage.setItem(DATA_KEY,JSON.stringify(window.DCM_BASE_DATA||[]));localStorage.setItem(ACTION_KEY,'[]');location.reload();};});
 })();
