@@ -108,6 +108,8 @@ const expectRows=(count,label)=>{
 };
 // The actual browser change handlers must keep the two filters mutually coherent.
 sandbox.__boardRegression.init();
+assert.ok(domListeners.has('ctActionView:change'),'Base filter listener missing: '+[...domListeners.keys()].join(','));
+assert.ok(domListeners.has('ctActionDetail:change'),'Detail filter listener missing: '+[...domListeners.keys()].join(','));
 assert.deepEqual({...sandbox.__boardRegression.state()},{base:'supply',detail:'all',view:'supply'});
 el('ctActionView').value='x';
 domListeners.get('ctActionView:change')();
