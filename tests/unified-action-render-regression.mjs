@@ -18,6 +18,25 @@ assert.ok(!/querySelectorAll\(['"]#ctActionBody tr['"]\)/.test(syncSource),
 assert.ok(html.includes('control-tower.js?v=20261015ui2'),
  'Cache-busted legacy renderer is required on deployed clients');
 
+
+const optionsFor=id=>{
+ const section=html.match(new RegExp('<select id="'+id+'"[^>]*>([\\s\\S]*?)<\\/select>'))?.[1];
+ assert.ok(section,'Missing filter dropdown '+id);
+ return [...section.matchAll(/<option value="([^"]+)"[^>]*>([^<]*)<\/option>/g)]
+  .map(([,value,label])=>({value,label}));
+};
+assert.deepEqual(optionsFor('ctActionView'),[
+ {value:'supply',label:'전체 거래처'},{value:'x',label:'우선 조치 필요처'}]);
+assert.deepEqual(optionsFor('ctActionDetail'),[
+ {value:'all',label:'전체'},
+ {value:'persist',label:'2개월 이상 지속 X'},
+ {value:'all3',label:'3개사 모두 X'},
+ {value:'improved',label:'X→O 개선 거래처'},
+ {value:'worsened',label:'O→X 악화 거래처'},
+ {value:'new',label:'신규 공급처'},
+ {value:'stopped',label:'중단 공급처'}]);
+assert.ok(!html.includes('id="ctActionEntity"'),'Removed redundant group-company filter returned');
+
 const data=[],risks=[];
 for(let i=1;i<=125;i++){
  const businessNo=String(i).padStart(4,'0'),businessName='검증 거래처 '+businessNo;
@@ -30,14 +49,17 @@ for(let i=1;i<=125;i++){
   priority:i%3===0?'P1':'P3',aging:'4M',xCount:i===5?2:3,
   partnerAction:{editedFields:['reasonCode'],reasonCode:'03',updatedAt:'2026-10-14'}});
 }
-const dom=new Map(),listeners=new Map();
+const dom=new Map(),listeners=new Map(),domListeners=new Map();
 const el=id=>{
  if(!dom.has(id))dom.set(id,{value:'',textContent:'',innerHTML:'',dataset:{},hidden:false,
    querySelectorAll:()=>[],classList:{add(){},remove(){},toggle(){}},setAttribute(){},
-   closest:()=>null,scrollIntoView(){},addEventListener(){}});
+   closest:()=>null,scrollIntoView(){},addEventListener(type,fn){domListeners.set(id+':'+type,fn);}});
  return dom.get(id);
 };
-for(const [id,v] of [['manager','전체'],['outlet','전체'],['month','2026-09']])el(id).value=v;
+for(const [id,v] of [['manager','전체'],['outlet','전체'],['month','2026-09'],
+ ['ctActionView','supply'],['ctActionDetail','all'],['ctActionSearch','']])el(id).value=v;
+el('ctActionDetail').options=optionsFor('ctActionDetail').map(o=>({...o,textContent:o.label,remove(){}}));
+el('ctAction');
 const localStorage={getItem(k){
  if(k==='dcm-dashboard-v8-data')return JSON.stringify(data);
  if(k==='dcm-dashboard-v10-actions')return '[]';
@@ -60,7 +82,10 @@ const patchHook='window.__boardRegression={'+
  'default(){actionLimit=PAGE_SIZE;actionView="x";renderAllXActionBoard();},'+
  'more(){actionLimit+=PAGE_SIZE;renderAllXActionBoard();},'+
  'all(){actionLimit=Number.MAX_SAFE_INTEGER;renderAllXActionBoard();},'+
- 'view(v){actionView=v;actionLimit=PAGE_SIZE;renderAllXActionBoard();}'+
+ 'view(v){actionView=v;actionLimit=PAGE_SIZE;renderAllXActionBoard();},'+
+ 'init(){installAllXBoard();},'+
+ 'state(){return {base:actionBase,detail:actionDetail,view:actionView}},'+
+ 'render(){renderAllXActionBoard();}'+
  '};';
 vm.runInContext(inject(patchSource,patchHook),sandbox);
 const board=el('ctActionBody');
@@ -81,6 +106,33 @@ const expectRows=(count,label)=>{
  assert.ok(!board.innerHTML.includes('수정 PIN으로 공용 Sync에 접속'),label+' permission instructions must not repeat inside cells');
  assert.ok(!/ct-score|ct-priority/.test(board.innerHTML),label+' scoring UI must remain removed');
 };
+// The actual browser change handlers must keep the two filters mutually coherent.
+sandbox.__boardRegression.init();
+assert.deepEqual(sandbox.__boardRegression.state(),{base:'supply',detail:'all',view:'supply'});
+el('ctActionView').value='x';
+domListeners.get('ctActionView:change')();
+assert.deepEqual(sandbox.__boardRegression.state(),{base:'x',detail:'all',view:'x'});
+el('ctActionDetail').value='improved';
+domListeners.get('ctActionDetail:change')();
+assert.deepEqual(sandbox.__boardRegression.state(),{base:'supply',detail:'improved',view:'improved'});
+assert.equal(el('ctActionView').value,'supply',
+ 'O-only improvements must not be accidentally filtered by current X status');
+sandbox.__boardRegression.render();expectRows(1,'X-to-O detail includes O-only improvement');
+el('ctActionView').value='x';
+domListeners.get('ctActionView:change')();
+assert.equal(el('ctActionDetail').value,'all',
+ 'A new base selection must clear an incompatible detail filter');
+assert.deepEqual(sandbox.__boardRegression.state(),{base:'x',detail:'all',view:'x'});
+el('ctActionDetail').value='stopped';
+domListeners.get('ctActionDetail:change')();
+assert.deepEqual(sandbox.__boardRegression.state(),{base:'supply',detail:'stopped',view:'stopped'});
+assert.equal(el('ctActionView').value,'supply');
+el('ctActionSearch').value='0009';
+domListeners.get('ctActionSearch:input')();
+assert.equal(sandbox.__boardRegression.state().detail,'stopped','Search must preserve selected detail');
+domListeners.get('ctActionClear:click')();
+assert.deepEqual(sandbox.__boardRegression.state(),{base:'supply',detail:'all',view:'supply'});
+assert.equal(el('ctActionSearch').value,'');
 sandbox.__boardRegression.default();expectRows(50,'Default 50 results');
 sandbox.__boardRegression.more();expectRows(100,'50 more results');
 sandbox.__boardRegression.all();expectRows(125,'All results');
