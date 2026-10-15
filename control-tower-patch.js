@@ -111,7 +111,6 @@ function masterInputMarkup(r,field){
   const reasons=window.DCM_ACTION_REASONS||{},k=esc(r.key);
   if(field==='reasonCode')return `<select data-allx-field="reasonCode" data-key="${k}"><option value="">원인 선택</option>${Object.entries(reasons).map(([code,label])=>`<option value="${esc(code)}" ${r.reasonCode===code?'selected':''}>${esc(code)} ${esc(label)}</option>`).join('')}</select>`;
   if(field==='status')return `<select data-allx-field="status" data-key="${k}">${['TODO','IN_PROGRESS','WAITING','DONE'].map(x=>`<option value="${x}" ${(r.status||'TODO')===x?'selected':''}>${statusLabel(x)}</option>`).join('')}</select>`;
-  if(field==='dueDate')return `<input type="date" data-allx-field="dueDate" data-key="${k}" value="${esc(r.dueDate||'')}">`;
   return `<input type="text" data-allx-field="plan" data-key="${k}" value="${esc(r.plan||'')}" placeholder="마스터 조치계획">`;
 }
 function buildBoardContext(){
