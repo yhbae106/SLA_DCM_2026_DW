@@ -21,20 +21,20 @@
 .ct-action-scoreguide{margin:0 0 8px;color:#426b9a;font-size:10.5px;}
 .ct-action-scoreguide summary{cursor:pointer;font-weight:800;padding:4px 0;}
 .ct-action-scoreguide .ct-score-guide{margin:7px 0 0;}
-#ctAction .ct-board{max-height:min(69vh,720px);overflow:auto;overscroll-behavior:contain;scrollbar-color:#c5d5e8 #f5f9fd;border:1px solid #dde6f0;border-radius:9px;}
-#ctAction .ct-board table{min-width:1430px;border-collapse:separate;border-spacing:0;table-layout:auto;}
+#ctAction .ct-board{max-height:min(69vh,720px);overflow-x:hidden;overflow-y:auto;overscroll-behavior:contain;scrollbar-color:#c5d5e8 #f5f9fd;border:1px solid #dde6f0;border-radius:9px;}
+#ctAction .ct-board table{width:100%;min-width:0;max-width:100%;border-collapse:separate;border-spacing:0;table-layout:fixed;}
 #ctAction .ct-board thead th{position:sticky;top:0;z-index:3;background:#edf3fa;white-space:nowrap;box-shadow:0 1px #d5e1ef;font-size:10.5px;}
 #ctAction .ct-board tbody td{vertical-align:middle;background:#fff;font-size:10.5px;}
 #ctAction .ct-board tbody tr:hover td{background:#f8fbff;}
-#ctAction .ct-board thead th:first-child{left:0;z-index:5;min-width:215px;background:#edf3fa;border-right:1px solid #dce5ef;}
-#ctAction .ct-board tbody td:first-child{position:sticky;left:0;z-index:2;min-width:215px;max-width:245px;background:#fff;border-right:1px solid #dce5ef;}
+#ctAction .ct-board thead th:first-child{left:0;z-index:5;min-width:0;background:#edf3fa;border-right:1px solid #dce5ef;}
+#ctAction .ct-board tbody td:first-child{position:sticky;left:0;z-index:2;min-width:0;max-width:none;background:#fff;border-right:1px solid #dce5ef;}
 #ctAction .ct-board tbody tr:hover td:first-child{background:#f8fbff;}
 #ctAction .ct-merchant strong{display:block;white-space:normal;overflow-wrap:anywhere;line-height:1.5;color:#264565;}
 #ctAction .ct-merchant small{display:block;color:#8491a4;font-size:9px;margin-top:3px;font-variant-numeric:tabular-nums;}
 #ctAction .ct-merchant .srm-launch{display:block;margin:5px 0 0!important;}
-#ctAction .ct-ox-cell{text-align:center;min-width:69px;}
+#ctAction .ct-ox-cell{text-align:center;min-width:0;}
 #ctAction .ct-readonly{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:normal;word-break:break-word;padding:5px 2px;color:#53677c;font-size:10.5px;line-height:1.45;}
-#ctAction .ct-dual-cell{min-width:195px;max-width:250px;vertical-align:top;}
+#ctAction .ct-dual-cell{min-width:0;max-width:none;vertical-align:top;}
 #ctAction .ct-dual-cell input,#ctAction .ct-dual-cell select{max-width:100%;min-width:0;box-sizing:border-box;}
 #ctAction.ct-action-unified .ct-action-more{display:flex;padding-top:10px;}
 .ct-hero .ct-kpi[data-kpi]{cursor:pointer;transition:border-color .17s,box-shadow .17s,transform .17s;}
@@ -61,3 +61,37 @@
 /* Retrospective month-scoped action snapshots never write to the live one-key Action Board. */
 #ctAction .ct-historical-value{display:block;white-space:normal;overflow-wrap:anywhere;font-weight:700;color:#315476;padding:7px 2px;line-height:1.5;max-width:240px}
 #ctAction .ct-monthly-archive{display:inline-block;margin:3px 0;padding:3px 6px;background:#edf5ff;border:1px solid #c9ddf5;border-radius:6px;color:#205b9a;font-weight:750;font-size:9px}
+
+/* Action Board: all ten columns fit the available desktop width; retain vertical scrolling only. */
+#ctAction .ct-board table{width:100%;min-width:0;max-width:100%;table-layout:fixed;}
+#ctAction .ct-board th,#ctAction .ct-board td{min-width:0;max-width:none;box-sizing:border-box;padding:8px 5px;white-space:normal;overflow-wrap:anywhere;word-break:normal;}
+#ctAction .ct-board th{line-height:1.4;vertical-align:middle;}
+#ctAction .ct-board th:nth-child(1){width:17%;}
+#ctAction .ct-board th:nth-child(2){width:8%;}
+#ctAction .ct-board th:nth-child(3){width:6%;}
+#ctAction .ct-board th:nth-child(4),#ctAction .ct-board th:nth-child(5),#ctAction .ct-board th:nth-child(6){width:5%;}
+#ctAction .ct-board th:nth-child(7){width:7%;}
+#ctAction .ct-board th:nth-child(8){width:17%;}
+#ctAction .ct-board th:nth-child(9){width:19%;}
+#ctAction .ct-board th:nth-child(10){width:11%;}
+#ctAction .ct-board .ct-dual-cell{width:auto;min-width:0;max-width:none;vertical-align:top;padding:6px 4px;}
+#ctAction .ct-master-entry,#ctAction .ct-partner-entry{min-width:0;max-width:100%;box-sizing:border-box;padding:6px;overflow-wrap:anywhere;}
+#ctAction .ct-master-entry input,#ctAction .ct-master-entry select{width:100%;min-width:0;max-width:100%;box-sizing:border-box;}
+#ctAction .ct-partner-entry span{overflow-wrap:anywhere;word-break:break-word;white-space:pre-wrap;}
+/* On smaller viewports a labeled grid replaces the wide table, never clipping a column. */
+@media(max-width:1180px){
+  #ctAction .ct-board{overflow-x:hidden;overflow-y:auto;}
+  #ctAction .ct-board table,#ctAction .ct-board tbody{display:block;width:100%;min-width:0;max-width:100%;}
+  #ctAction .ct-board thead{display:none;}
+  #ctAction .ct-board tbody tr{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;padding:11px;margin:9px 7px;border:1px solid #dce7f2;border-radius:10px;background:#fff;content-visibility:visible;contain-intrinsic-size:auto;}
+  #ctAction .ct-board tbody td{display:block;position:static!important;left:auto!important;z-index:auto!important;grid-column:1/-1;width:auto!important;min-width:0!important;max-width:none!important;padding:5px!important;border:0!important;background:transparent!important;text-align:left;}
+  #ctAction .ct-board tbody td:before{content:attr(data-label);display:block;margin:0 0 4px;font-size:10px;font-weight:850;color:#6a7d94;}
+  #ctAction .ct-board tbody td:nth-child(2),#ctAction .ct-board tbody td:nth-child(3){grid-column:span 3;}
+  #ctAction .ct-board tbody td:nth-child(4),#ctAction .ct-board tbody td:nth-child(5),#ctAction .ct-board tbody td:nth-child(6){grid-column:span 2;}
+  #ctAction .ct-board tbody td:nth-child(8),#ctAction .ct-board tbody td:nth-child(9){grid-column:span 3;}
+  #ctAction .ct-board tbody td:first-child:before{display:none;}
+  #ctAction .ct-board .ct-dual-cell{padding:4px!important;}
+}
+@media(max-width:630px){
+  #ctAction .ct-board tbody td:nth-child(8),#ctAction .ct-board tbody td:nth-child(9){grid-column:1/-1;}
+}
