@@ -118,7 +118,7 @@ vm.runInContext(masterPatch,uiEnv);
 const board=uiEnv.DCMUnifiedAction;
 if(!board)fail('Master unified list selection module missing');
 const context=board.build();
-if(board.label('new','2026-07')!=='7월 신규 도도매'||board.label('stopped','2026-08')!=='8월 중단 도도매'||board.label('new','2026-09')!=='9월 신규 도도매')fail('Month-specific Action Board option labels failed');
+if(board.label('new','2026-07')!=='7월 신규 공급처'||board.label('stopped','2026-08')!=='8월 중단 공급처'||board.label('new','2026-09')!=='9월 신규 공급처')fail('Month-specific Action Board option labels failed');
 const archived=uiEnv.DCM_MONTHLY_ACTION_HISTORY.get('2026-09','A|||3');
 if(!archived||archived.masterAction.status!=='DONE'||archived.partnerAction.status!=='DONE')
   fail('Master July/Aug/Sept historical X→O completion projection failed');
