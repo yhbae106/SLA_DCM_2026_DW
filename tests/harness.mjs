@@ -206,8 +206,10 @@ if(!liveSync.includes("post({type:'load'})"))fail('Action read must use authenti
 if(liveSync.includes("url.searchParams.set('token'"))fail('Secret must not be sent in GET URL');
 if(!liveSync.includes('syncBroken=true'))fail('HTTP404 retry circuit breaker missing');
 if(!liveSync.includes("REQUIRED_API_VERSION='20261008-seven-reasons-fast-v3'"))fail('Exact GAS deployment version gate missing');
-if(!liveSync.includes("post({type:'repairReasonValidation'})"))fail('One-click H31/H110 repair call missing');
-if(liveSync.includes("sessionStorage.getItem(REPAIR_SESSION_KEY)!=='1'"))fail('Full H validation rebuild still runs during normal Sync');
+if(liveSync.includes("post({type:'repairReasonValidation'})")||liveSync.includes('ctReasonRepair'))fail('Obsolete H-column repair action must not appear in Dashboard UI');
+if(!liveSync.includes('signInFromButton')||!liveSync.includes('SESSION_TOKEN_KEY'))fail('Explicit login flow and tab-scoped auth missing');
+if(!liveSync.includes('ctSyncPinApply')||!liveSync.includes('ctSyncRefresh'))fail('Separate editing PIN and authenticated refresh actions missing');
+if(liveSync.includes('localStorage.setItem(TOKEN_KEY'))fail('Shared secret must not be stored permanently in localStorage');
 const reasonConfig=read('action-sync-config.js');
 if(!reasonConfig.includes("'05':'도매몰 미연동'")||reasonConfig.includes("'08':'도매몰 연동 필요'"))
   fail('Dashboard reason dictionary is not the approved seven-code scale');
@@ -215,8 +217,7 @@ if(!gas.includes("const DCM_SYNC_API_VERSION = '20261008-seven-reasons-fast-v3'"
   fail('Backend deployment version not updated');
 
 if(!liveSync.includes("PENDING_KEY='dcm-action-master-pending-v1'"))fail('Unsent master edits are not persisted');
-if(!liveSync.includes('if(!saved)return false'))fail('Failed pending writes may be overwritten by remote sync');
-if(!liveSync.includes('ctReasonRepair'))fail('Master sheet repair button missing');
+if(!liveSync.includes('if(pending){')||!liveSync.includes('미전송 수정'))fail('Unsent edits must survive successful read-only login');
 
 const liveAPI=read('apps-script/Code.gs');
 if(!liveAPI.includes("body.type === 'partnerLogin'")||!liveAPI.includes("body.type === 'partnerSaveActions'"))fail('Fast login or batch saving endpoint missing');
