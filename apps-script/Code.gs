@@ -12,6 +12,8 @@ const DCM_SRM_FIELDS = ['eventId','key','outlet','businessNo','entity','type','s
 const DCM_SYNC_API_VERSION = '20261008-seven-reasons-fast-v3';
 const DCM_SYNC_BUILD = '20261020-fast-login-revision-v1';
 const DCM_ACTION_REVISION_KEY = 'DCM_ACTION_REVISION';
+const DCM_DASHBOARD_REVISION_KEY = 'DCM_DASHBOARD_REVISION';
+const DCM_PARTNER_CACHE_TTL = 600;
 const DCM_REASON_DEFAULTS = {
   '01':'ERP/시스템 미구축','02':'도입 품목 미연동','03':'전산/데이터 오류',
   '04':'거래처 연동 거부/미협조','05':'도매몰 미연동',
@@ -44,13 +46,13 @@ function doPost(e) {
     if (body.type === 'partnerLogin' || body.type === 'partnerDashboard') {
       const partner = normalizePartner_(body.partner);
       assertPartnerPassword_(partner, body.password);
-      if (body.type === 'partnerLogin') return json_({ok:true, partner:partner,version:DCM_SYNC_API_VERSION});
+      if (body.type === 'partnerLogin') return json_({ok:true, partner:partner,version:DCM_SYNC_API_VERSION,dashboardRevision:dashboardRevision_()});
       return json_({ok:true, partner:partner, ...loadPartnerDashboardData_(partner)});
     }
     if (body.type === 'partnerActionRevision') {
       const partner = normalizePartner_(body.partner);
       assertPartnerPassword_(partner, body.password);
-      return json_({ok:true,version:DCM_SYNC_API_VERSION,build:DCM_SYNC_BUILD,revision:actionRevision_()});
+      return json_({ok:true,version:DCM_SYNC_API_VERSION,build:DCM_SYNC_BUILD,revision:actionRevision_(),dashboardRevision:dashboardRevision_()});
     }
     if (body.type === 'partnerActions' || body.type === 'partnerSaveAction' || body.type === 'partnerSaveActions') {
       const partner = normalizePartner_(body.partner);
@@ -171,6 +173,9 @@ function actionRevision_() {
 function markActionRevision_() {
   PropertiesService.getScriptProperties().setProperty(DCM_ACTION_REVISION_KEY, Utilities.getUuid());
 }
+function dashboardRevision_() {
+  return PropertiesService.getScriptProperties().getProperty(DCM_DASHBOARD_REVISION_KEY) || '';
+}
 
 function assertMasterPassword_(password) {
   const expected = PropertiesService.getScriptProperties().getProperty('DCM_MASTER_PASSWORD');
@@ -267,35 +272,70 @@ function partnerOfOutlet_(outlet) {
 
 function canonicalManager_(outlet, manager) {return String(outlet || '').trim() === '백제약품 대전' ? '정직한' : String(manager || '');}
 
-function loadPartnerDashboardData_(partner) {
-  // Login/dashboard must not wait for the much heavier Action Board sheet and History.
-  const cache = typeof CacheService === 'undefined' ? null : CacheService.getScriptCache();
-  const cacheKey='partnerData-v4-'+partner;
-  if(cache){
-    const meta=cache.get(cacheKey);
-    if(meta)try{
-      const n=Number(meta);
-      if(n>=1&&n<=60){
-        const keys=Array.from({length:n},(_,i)=>cacheKey+'-'+i),pages=cache.getAll(keys);
-        if(keys.every(k=>typeof pages[k]==='string'))return JSON.parse(keys.map(k=>pages[k]).join(''));
-      }
-    }catch(ignore){}
-  }
-  const all = loadDashboardData_();
-  const filtered = (all.data || []).filter(r => partnerOfOutlet_(r.outlet) === partner);
-  const result={data:filtered,updatedAt:all.updatedAt,updatedBy:all.updatedBy,rowCount:filtered.length,version:DCM_SYNC_API_VERSION};
-  if(cache){
-    const encoded=JSON.stringify(result),chunkSize=60000,count=Math.ceil(encoded.length/chunkSize);
-    if(count>=1&&count<=60){
-      const pages={};
-      for(let i=0;i<count;i++)pages[cacheKey+'-'+i]=encoded.slice(i*chunkSize,(i+1)*chunkSize);
-      cache.putAll(pages,90);
-      cache.put(cacheKey,String(count),90);
-    }
+function partnerCacheKey_(partner) { return 'partnerData-v5-'+partner; }
+function partnerDataFromRows_(rows,partner) {
+  const result=[];
+  for(const r of rows){
+    if(!r[0]||!r[1]||!r[3]||partnerOfOutlet_(r[1])!==partner)continue;
+    result.push({
+      month:r[0],outlet:r[1],manager:canonicalManager_(r[1],r[2]),
+      businessNo:r[3],businessName:r[4]||'',
+      statuses:{'대웅제약':r[5]||null,'대웅바이오':r[6]||null,'한올바이오':r[7]||null}
+    });
   }
   return result;
 }
-
+function getPartnerCached_(cache,partner) {
+  if(!cache)return null;
+  try{
+    const meta=JSON.parse(cache.get(partnerCacheKey_(partner))||'null');
+    if(!meta||!meta.prefix||!Number.isInteger(meta.n)||meta.n<1||meta.n>120)return null;
+    const keys=Array.from({length:meta.n},(_,i)=>meta.prefix+'-'+i);
+    const parts=cache.getAll(keys);
+    if(!keys.every(k=>typeof parts[k]==='string'))return null;
+    const parsed=JSON.parse(keys.map(k=>parts[k]).join(''));
+    return Array.isArray(parsed.data)?parsed:null;
+  }catch(e){console.warn('Partner dashboard cache read skipped: '+String(e));return null;}
+}
+function putPartnerCached_(cache,partner,result) {
+  if(!cache)return;
+  try{
+    const encoded=JSON.stringify(result);
+    // CacheService has a 100 KB BYTE limit per entry, not 100K UTF-16 chars.
+    // 20K code units also accommodates Hangul and surrogate-pair symbols.
+    const chunkSize=20000,count=Math.ceil(encoded.length/chunkSize);
+    if(count<1||count>120)return;
+    const prefix=partnerCacheKey_(partner)+'-'+Utilities.getUuid().slice(0,14);
+    const pages={};
+    for(let i=0;i<count;i++)pages[prefix+'-'+i]=encoded.slice(i*chunkSize,(i+1)*chunkSize);
+    cache.putAll(pages,DCM_PARTNER_CACHE_TTL);
+    // Metadata is published last, so readers never assemble partial snapshots.
+    cache.put(partnerCacheKey_(partner),JSON.stringify({prefix:prefix,n:count}),DCM_PARTNER_CACHE_TTL);
+  }catch(e){
+    // A transient cache error must NEVER prevent authenticated dashboard access.
+    console.warn('Partner dashboard cache write skipped: '+String(e));
+  }
+}
+function loadPartnerDashboardData_(partner) {
+  // Read only this partner's rows into objects. Never return another partner's records.
+  const cache=typeof CacheService==='undefined'?null:CacheService.getScriptCache();
+  const cached=getPartnerCached_(cache,partner);
+  if(cached)return cached;
+  const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
+  const sh=ss.getSheetByName(DCM_DATA_SHEET),meta=ss.getSheetByName(DCM_DATA_META_SHEET);
+  const count=sh?sh.getLastRow():0;
+  const rows=count>=2?sh.getRange(2,1,count-1,8).getDisplayValues():[];
+  const data=partnerDataFromRows_(rows,partner);
+  let updatedAt='',updatedBy='';
+  if(meta&&meta.getLastRow()>=2){
+    const values=meta.getRange(2,1,1,2).getDisplayValues()[0];
+    updatedAt=values[0]||'';updatedBy=values[1]||'';
+  }
+  const result={data:data,updatedAt:updatedAt,updatedBy:updatedBy,
+    rowCount:data.length,version:DCM_SYNC_API_VERSION,dashboardRevision:dashboardRevision_()};
+  putPartnerCached_(cache,partner,result);
+  return result;
+}
 
 function withActionLock_(callback) {
   const lock=LockService.getScriptLock();lock.waitLock(30000);
@@ -531,7 +571,23 @@ function saveDashboardData_(data, editor) {
     meta.getRange(1,1,1,3).setValues([['updatedAt','updatedBy','rowCount']]);
     meta.getRange(2,1,1,3).setValues([[nowIso, String(editor || 'MASTER'), clean.length]]);
     SpreadsheetApp.flush();
-    if(typeof CacheService !== 'undefined'){const cache=CacheService.getScriptCache();DCM_PARTNERS.forEach(p=>cache.remove('partnerData-v4-'+p));}
+    // Invalidate cache immediately after a successful sheet commit.
+    const revision=Utilities.getUuid();
+    PropertiesService.getScriptProperties().setProperty(DCM_DASHBOARD_REVISION_KEY,revision);
+    if(typeof CacheService!=='undefined'){
+      try{
+        const cache=CacheService.getScriptCache();
+        DCM_PARTNERS.forEach(p=>{cache.remove('partnerData-v4-'+p);cache.remove(partnerCacheKey_(p));});
+        // The master upload already has all rows in memory; warming partner-only
+        // snapshots avoids scanning the 5,000-row master sheet at their first login.
+        for(const p of DCM_PARTNERS){
+          const partnerData=partnerDataFromRows_(clean,p);
+          putPartnerCached_(cache,p,{data:partnerData,updatedAt:nowIso,
+            updatedBy:String(editor||'MASTER'),rowCount:partnerData.length,
+            version:DCM_SYNC_API_VERSION,dashboardRevision:revision});
+        }
+      }catch(e){console.warn('Partner cache warmup skipped: '+String(e));}
+    }
     return {updatedAt:nowIso, updatedBy:String(editor || 'MASTER'), rowCount:clean.length};
   } finally {
     lock.releaseLock();
