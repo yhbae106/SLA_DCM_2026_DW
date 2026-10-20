@@ -15,18 +15,20 @@ const REQUIRED_API_VERSION='20261008-seven-reasons-fast-v3';
 const PENDING_KEY='dcm-action-master-pending-v1';
 const ACTIVE_ACTION_FIELDS=['reasonCode','plan','status'];
 const originalSetItem=Storage.prototype.setItem;
-let suppressSync=false,pollTimer=null,snapshotTimer=null,lastMeta=null,lastPullAt=0,lastEditAt=0,syncBroken=false,serverReady=false,flushingPending=false,signedIn=false,loginBusy=false;
+let suppressSync=false,pollTimer=null,snapshotTimer=null,lastMeta=null,lastPullAt=0,lastEditAt=0,syncBroken=false,serverReady=false,flushingPending=false,signedIn=false,loginBusy=false,lastRevision=null,revisionSupported=false;
 const $=id=>document.getElementById(id);
 const esc=v=>String(v??'').replace(/[&<>'\"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c]));
 function endpoint(){return String(CFG.endpoint||'').trim();}
 function token(){return sessionStorage.getItem(SESSION_TOKEN_KEY)||'';}
+function masterPassword(){return editor()==='배영훈'&&window.DCMMasterSync?.isMaster?.()?sessionStorage.getItem('dcm-dashboard-master-password')||'':'';}
+function hasReadAuth(){return !!token()||!!masterPassword();}
 function editor(){return localStorage.getItem(EDITOR_KEY)||CFG.editors?.[0]||'';}
 const EDITOR_PIN_SESSION='dcm-sync-editor-pin-session';
 const SYNC_EDITOR_NAMES=['배영훈','정직한','임인숙'];
 function editorPin(){return sessionStorage.getItem(EDITOR_PIN_SESSION)||'';}
 function canEditFor(manager){
  const user=editor(),owner=String(manager||'').trim();
- return !!token()&&SYNC_EDITOR_NAMES.includes(owner)&&
+ return hasReadAuth()&&SYNC_EDITOR_NAMES.includes(owner)&&
    ((user==='배영훈'&&!!window.DCMMasterSync?.isMaster?.())||
     (!!editorPin()&&(user==='배영훈'||user===owner)));
 }
@@ -68,6 +70,7 @@ function renderLoginUI(){
   $('ctSyncEditAuth').textContent=editorPin()?'수정 PIN 변경':'수정 PIN 입력';
  }
  if(!signedIn&&pin)pin.hidden=true;
+ if(masterPassword()&&key)key.hidden=true;
  if($('ctSyncSavePending'))$('ctSyncSavePending').hidden=!signedIn||!pendingEdits().length;
  const dot=$('ctSyncBar')?.querySelector('.ct-sync-dot');
  if(dot)dot.classList.toggle('connected',signedIn);
@@ -81,6 +84,13 @@ function logoutSync(reason='로그아웃했습니다.'){
  renderLoginUI();updateEditAccess();
  setStatus(reason,'idle','로그인하려면 올바른 공유키를 입력해 주세요.');
 }
+async function quickLogin(){
+ const json=await post({type:'syncLogin'});
+ if(json.version!==REQUIRED_API_VERSION)throw new Error('연동 서버 버전 불일치 · Apps Script 최신 버전을 배포해 주세요.');
+ signedIn=true;serverReady=true;syncBroken=false;renderLoginUI();updateEditAccess();
+ setStatus('인증 완료 · Action 데이터 로딩 중','working');
+ void pullRemote(true);
+}
 async function signInFromButton(){
  if(loginBusy)return;
  if(signedIn){logoutSync();return;}
@@ -91,19 +101,14 @@ async function signInFromButton(){
  sessionStorage.setItem(SESSION_TOKEN_KEY,key);
  sessionStorage.setItem(SESSION_EDITOR_KEY,editor());
  try{
-  const ok=await pullRemote(true);
-  if(!ok){
-   sessionStorage.removeItem(SESSION_TOKEN_KEY);
-   sessionStorage.removeItem(SESSION_EDITOR_KEY);
-   signedIn=false;return;
-  }
+  await quickLogin();
   signedIn=true;
   if($('ctSyncKey'))$('ctSyncKey').value='';
   const n=pendingEdits().length;
-  setStatus('로그인 성공 · 공용 Sheets 연결됨','ok',
+  setStatus('로그인 인증 완료 · 공용 데이터 확인 중','working',
    n?'미전송 수정 '+n+'건 보관 중 · 수정 PIN 적용 후 저장해 주세요.':'공용 Action 데이터를 서버에서 확인했습니다.');
   scheduleRiskSnapshot(600,false);
- }finally{loginBusy=false;renderLoginUI();updateEditAccess();}
+ }catch(e){signedIn=false;serverReady=false;sessionStorage.removeItem(SESSION_TOKEN_KEY);sessionStorage.removeItem(SESSION_EDITOR_KEY);setStatus(e.message.includes('공유키')?'공유키 로그인 실패':'로그인 연결 실패','error',e.message);}finally{loginBusy=false;renderLoginUI();updateEditAccess();}
 }
 function installUI(){
  const board=[...document.querySelectorAll('.ct-panel')].find(x=>x.querySelector('h2')?.textContent.includes('Action Board'));
@@ -202,11 +207,11 @@ function enrichActions(actions){
   });
 }
 async function post(payload){
- if(!endpoint()||!token())throw new Error(!endpoint()?'Apps Script URL 미설정':'먼저 공용 Sync에 로그인해 주세요');
+ if(!endpoint()||!hasReadAuth())throw new Error(!endpoint()?'Apps Script URL 미설정':'먼저 공용 Sync에 로그인해 주세요');
  if(payload.type==='save'&&!serverReady)throw new Error('공용 연결이 확인되지 않아 저장하지 않았습니다. 변경 내용은 이 브라우저에 남아 있습니다.');
- const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),payload.type==='load'?30000:24000);
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),['syncLogin','actionRevision'].includes(payload.type)?9000:payload.type==='load'?30000:24000);
  try{
-   const res=await fetch(endpoint(),{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...payload,token:token()}),signal:controller.signal});
+   const res=await fetch(endpoint(),{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({...payload,token:token(),editor:editor(),masterPassword:masterPassword()}),signal:controller.signal});
    if(!res.ok){const error=new Error(res.status===404?'HTTP 404 · Google Apps Script 배포 URL이 유효하지 않습니다':'HTTP '+res.status);error.status=res.status;throw error;}
    let json;try{json=await res.json();}catch(_){throw new Error('Apps Script에서 JSON 응답을 받지 못했습니다. 배포를 확인하세요.');}
    if(!json.ok)throw new Error(json.error||'Sync 실패');
@@ -286,7 +291,7 @@ async function pushChanged(actions){
 
 function riskSignature(snapshot){return hash((snapshot||[]).map(a=>[a.key,a.priority,a.businessName,a.outlet,a.manager,a.aging]).sort((a,b)=>String(a[0]).localeCompare(String(b[0]))));}
 async function pushRiskSnapshot(force=false){
- if(!endpoint()||!token()||syncBroken||!serverReady)return;
+ if(!endpoint()||!hasReadAuth()||syncBroken||!serverReady)return;
  const snapshot=allRiskRows();if(!snapshot.length)return;
  const sig=riskSignature(snapshot);if(!force&&sessionStorage.getItem(RISK_HASH_KEY)===sig)return;
  try{
@@ -303,7 +308,7 @@ async function pullRemote(force=false){
  try{
   installUI();
   if(!endpoint()){setStatus('Apps Script 연동 주소 미설정','error');return false;}
-  if(!token()){setStatus('공용키 로그인 필요','idle');return false;}
+  if(!hasReadAuth()){setStatus('공용키 로그인 필요','idle');return false;}
   if(!force&&(syncBroken||!signedIn||document.visibilityState!=='visible'||isEditing()))return false;
   setStatus('Google Sheets 연결 확인 중…','working','Apps Script에 인증된 POST 요청을 전송하고 있습니다.');
   const json=await post({type:'load'});
@@ -315,6 +320,7 @@ async function pullRemote(force=false){
    return false;
   }
   serverReady=true;syncBroken=false;signedIn=true;
+  if(Object.prototype.hasOwnProperty.call(json,'revision')){lastRevision=json.revision;revisionSupported=true;}
   renderLoginUI();updateEditAccess();
   const pending=pendingEdits().length;
   if(pending){
@@ -377,6 +383,14 @@ Storage.prototype.setItem=function(k,v){
    if(changed.length){lastEditAt=Date.now();setTimeout(()=>pushChanged(changed),80);}
  }catch(e){}
 };
+async function checkRevision(){
+ if(!signedIn||!serverReady||!hasReadAuth()||document.visibilityState!=='visible'||isEditing())return;
+ try{
+  const json=await post({type:'actionRevision'});
+  if(json.version!==REQUIRED_API_VERSION)return;
+  if(!revisionSupported||json.revision!==lastRevision){await pullRemote(false);}
+ }catch(e){console.warn('[DCM Action Sync] revision check failed',e);}
+}
 function start(){
  // Preserve historic user-selected reason codes; remapping is not safe without server mapping.
  migrateRetiredReason08();
@@ -386,9 +400,14 @@ function start(){
   sessionStorage.removeItem(SESSION_TOKEN_KEY);sessionStorage.removeItem(EDITOR_PIN_SESSION);
  }
  installUI();observeBoard();
- if(token())pullRemote(true).then(ok=>{if(ok)scheduleRiskSnapshot(1400,false);});
+ if(masterPassword()&&!token()){
+  signedIn=true;serverReady=true;renderLoginUI();updateEditAccess();void pullRemote(true);
+ }else if(token()){
+  quickLogin().catch(e=>{serverReady=false;signedIn=false;setStatus('공용 Sync 재인증 필요','error',e.message);});
+ }
  else setStatus('로그인 필요','idle','담당자 선택 후 공유키를 입력하고 로그인 버튼을 눌러주세요.');
- if(pollTimer)clearInterval(pollTimer);const poll=Math.max(30000,Number(CFG.pollMs)||30000);pollTimer=setInterval(()=>pullRemote(false),poll);
+ if(pollTimer)clearInterval(pollTimer);const poll=Math.max(30000,Number(CFG.pollMs)||30000);pollTimer=setInterval(()=>checkRevision(),Math.min(poll,12000));
+ window.addEventListener('dcm-master-authenticated',()=>{if(masterPassword()){signedIn=true;serverReady=true;renderLoginUI();void pullRemote(true);}});
  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastPullAt>poll)pullRemote(false);});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(start,100),{once:true});else setTimeout(start,100);
