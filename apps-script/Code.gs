@@ -51,7 +51,9 @@ function doPost(e) {
         // return only fully populated, authorized partner caches, when available.
         const cache=body.preferCachedDashboard&&typeof CacheService!=='undefined'
           ?CacheService.getScriptCache():null;
-        const quickData=getPartnerCached_(cache,partner);
+        const cachedData=getPartnerCached_(cache,partner);
+        const currentDataRevision=dashboardRevision_();
+        const quickData=cachedData&&String(cachedData.dashboardRevision||'')===currentDataRevision?cachedData:null;
         const quickActions=getPartnerCached_(cache,'actions-'+partner);
         const safeActions=quickActions&&quickActions.revision===actionRevision_()?quickActions:null;
         return json_({ok:true,partner:partner,version:DCM_SYNC_API_VERSION,
@@ -332,7 +334,7 @@ function loadPartnerDashboardData_(partner) {
   // Read only this partner's rows into objects. Never return another partner's records.
   const cache=typeof CacheService==='undefined'?null:CacheService.getScriptCache();
   const cached=getPartnerCached_(cache,partner);
-  if(cached)return cached;
+  if(cached&&String(cached.dashboardRevision||'')===dashboardRevision_())return cached;
   const ss=SpreadsheetApp.openById(DCM_SPREADSHEET_ID);
   const sh=ss.getSheetByName(DCM_DATA_SHEET),meta=ss.getSheetByName(DCM_DATA_META_SHEET);
   const count=sh?sh.getLastRow():0;
