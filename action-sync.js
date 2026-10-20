@@ -105,10 +105,9 @@ async function signInFromButton(){
   signedIn=true;
   if($('ctSyncKey'))$('ctSyncKey').value='';
   const n=pendingEdits().length;
-  setStatus('로그인 인증 완료 · 공용 데이터 확인 중','working',
-   n?'미전송 수정 '+n+'건 보관 중 · 수정 PIN 적용 후 저장해 주세요.':'공용 Action 데이터를 서버에서 확인했습니다.');
+  if(n)setStatus('로그인 인증 완료 · 미전송 수정 보관','working','미전송 수정 '+n+'건 · 수정 PIN 적용 후 저장해 주세요.');
   scheduleRiskSnapshot(600,false);
- }catch(e){signedIn=false;serverReady=false;sessionStorage.removeItem(SESSION_TOKEN_KEY);sessionStorage.removeItem(SESSION_EDITOR_KEY);setStatus(e.message.includes('공유키')?'공유키 로그인 실패':'로그인 연결 실패','error',e.message);}finally{loginBusy=false;renderLoginUI();updateEditAccess();}
+ }catch(e){signedIn=false;serverReady=false;sessionStorage.removeItem(SESSION_TOKEN_KEY);sessionStorage.removeItem(SESSION_EDITOR_KEY);setStatus(e.status===404?'Apps Script 배포 주소 오류':e.message.includes('공유키')?'공유키 로그인 실패':'로그인 연결 실패','error',e.message);}finally{loginBusy=false;renderLoginUI();updateEditAccess();}
 }
 function installUI(){
  const board=[...document.querySelectorAll('.ct-panel')].find(x=>x.querySelector('h2')?.textContent.includes('Action Board'));
