@@ -10,7 +10,7 @@ const DCM_PARTNER_ACTION_FIELDS = ['reasonCode','plan','dueDate','status'];
 const DCM_SRM_SHEET = 'SRM Events';
 const DCM_SRM_FIELDS = ['eventId','key','outlet','businessNo','entity','type','status','reason','erpVendor','contactTarget','detail','nextAction','owner','dueDate','baselineMonth','actor','side','updatedAt','verificationMonth','result','requestId'];
 const DCM_SYNC_API_VERSION = '20261008-seven-reasons-fast-v3';
-const DCM_SYNC_BUILD = '20261020-fast-login-revision-v1';
+const DCM_SYNC_BUILD = '20261020-partner-fast-bootstrap-v2';
 const DCM_ACTION_REVISION_KEY = 'DCM_ACTION_REVISION';
 const DCM_DASHBOARD_REVISION_KEY = 'DCM_DASHBOARD_REVISION';
 const DCM_PARTNER_CACHE_TTL = 600;
@@ -46,7 +46,19 @@ function doPost(e) {
     if (body.type === 'partnerLogin' || body.type === 'partnerDashboard') {
       const partner = normalizePartner_(body.partner);
       assertPartnerPassword_(partner, body.password);
-      if (body.type === 'partnerLogin') return json_({ok:true, partner:partner,version:DCM_SYNC_API_VERSION,dashboardRevision:dashboardRevision_()});
+      if (body.type === 'partnerLogin') {
+        // Optional single-round-trip bootstrap. Never query the sheet on login:
+        // return only fully populated, authorized partner caches, when available.
+        const cache=body.preferCachedDashboard&&typeof CacheService!=='undefined'
+          ?CacheService.getScriptCache():null;
+        const quickData=getPartnerCached_(cache,partner);
+        const quickActions=getPartnerCached_(cache,'actions-'+partner);
+        const safeActions=quickActions&&quickActions.revision===actionRevision_()?quickActions:null;
+        return json_({ok:true,partner:partner,version:DCM_SYNC_API_VERSION,
+          dashboardRevision:dashboardRevision_(),
+          dashboardSnapshot:quickData&&Array.isArray(quickData.data)?quickData:null,
+          actionSnapshot:safeActions});
+      }
       return json_({ok:true, partner:partner, ...loadPartnerDashboardData_(partner)});
     }
     if (body.type === 'partnerActionRevision') {
