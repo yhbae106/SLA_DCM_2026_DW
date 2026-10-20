@@ -294,7 +294,7 @@ function getPartnerCached_(cache,partner) {
     const parts=cache.getAll(keys);
     if(!keys.every(k=>typeof parts[k]==='string'))return null;
     const parsed=JSON.parse(keys.map(k=>parts[k]).join(''));
-    return Array.isArray(parsed.data)?parsed:null;
+    return Array.isArray(parsed.data)||Array.isArray(parsed.actions)?parsed:null;
   }catch(e){console.warn('Partner dashboard cache read skipped: '+String(e));return null;}
 }
 function putPartnerCached_(cache,partner,result) {
@@ -342,13 +342,21 @@ function withActionLock_(callback) {
   try {return callback();} finally {lock.releaseLock();}
 }
 function loadPartnerActions_(partner) {
+  const revision=actionRevision_();
+  const cache=typeof CacheService==='undefined'?null:CacheService.getScriptCache();
+  const cachePartner='actions-'+partner;
+  const hit=getPartnerCached_(cache,cachePartner);
+  if(hit&&hit.revision===revision)return hit;
   const shared=loadActions_(false);
   const visible=shared.actions.filter(a => partnerOfOutlet_(a.outlet || String(a.key || '').split('|||')[0]) === partner)
     .map(a => ({key:a.key,businessNo:a.businessNo,priority:a.priority,businessName:a.businessName,
       outlet:a.outlet,manager:canonicalManager_(a.outlet,a.manager),aging:a.aging,reasonCode:a.reasonCode,
       plan:a.plan,dueDate:a.dueDate,status:a.status,modifiedBy:a.modifiedBy,updatedAt:a.updatedAt,
       partnerAction:a.partnerAction||null}));
-  return {actions:visible,reasons:loadReasons_(),updatedAt:shared.updatedAt,updatedBy:shared.updatedBy};
+  const result={actions:visible,reasons:loadReasons_(),updatedAt:shared.updatedAt,
+    updatedBy:shared.updatedBy,revision:revision,version:DCM_SYNC_API_VERSION};
+  putPartnerCached_(cache,cachePartner,result);
+  return result;
 }
 
 /* A:M: master only. N:T: independent Partner entries. */
