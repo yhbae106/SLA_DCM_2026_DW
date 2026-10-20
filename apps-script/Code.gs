@@ -10,6 +10,8 @@ const DCM_PARTNER_ACTION_FIELDS = ['reasonCode','plan','dueDate','status'];
 const DCM_SRM_SHEET = 'SRM Events';
 const DCM_SRM_FIELDS = ['eventId','key','outlet','businessNo','entity','type','status','reason','erpVendor','contactTarget','detail','nextAction','owner','dueDate','baselineMonth','actor','side','updatedAt','verificationMonth','result','requestId'];
 const DCM_SYNC_API_VERSION = '20261008-seven-reasons-fast-v3';
+const DCM_SYNC_BUILD = '20261020-fast-login-revision-v1';
+const DCM_ACTION_REVISION_KEY = 'DCM_ACTION_REVISION';
 const DCM_REASON_DEFAULTS = {
   '01':'ERP/시스템 미구축','02':'도입 품목 미연동','03':'전산/데이터 오류',
   '04':'거래처 연동 거부/미협조','05':'도매몰 미연동',
@@ -19,7 +21,7 @@ const DCM_REASON_DEFAULTS = {
 function doGet(e) {
   try {
     const type = String(e && e.parameter && e.parameter.type || '');
-    if (type === 'health') return json_({ok:true, service:'DCM Action Sync',version:DCM_SYNC_API_VERSION});
+    if (type === 'health') return json_({ok:true, service:'DCM Action Sync',version:DCM_SYNC_API_VERSION,build:DCM_SYNC_BUILD});
     if (type === 'dashboard') throw new Error('마스터 데이터는 인증된 POST 요청으로만 조회할 수 있습니다.');
     assertToken_(e && e.parameter && e.parameter.token);
     return json_({ok:true, ...loadActions_(), reasons:loadReasons_()});
@@ -45,10 +47,18 @@ function doPost(e) {
       if (body.type === 'partnerLogin') return json_({ok:true, partner:partner,version:DCM_SYNC_API_VERSION});
       return json_({ok:true, partner:partner, ...loadPartnerDashboardData_(partner)});
     }
+    if (body.type === 'partnerActionRevision') {
+      const partner = normalizePartner_(body.partner);
+      assertPartnerPassword_(partner, body.password);
+      return json_({ok:true,version:DCM_SYNC_API_VERSION,build:DCM_SYNC_BUILD,revision:actionRevision_()});
+    }
     if (body.type === 'partnerActions' || body.type === 'partnerSaveAction' || body.type === 'partnerSaveActions') {
       const partner = normalizePartner_(body.partner);
       assertPartnerPassword_(partner, body.password);
-      if (body.type === 'partnerActions') return json_({ok:true, ...loadPartnerActions_(partner)});
+      if (body.type === 'partnerActions') {
+        const revision=actionRevision_(); // Capture before reading rows to avoid missing a concurrent write.
+        return json_({ok:true, ...loadPartnerActions_(partner),revision:revision});
+      }
       if (body.type === 'partnerSaveActions') return json_({ok:true,...withActionLock_(function(){return savePartnerActionsBatch_(partner,body.changes);})});
       return json_({ok:true, ...withActionLock_(function(){return savePartnerAction_(partner,body);})});
     }
@@ -68,10 +78,15 @@ function doPost(e) {
       const result = saveDashboardData_(Array.isArray(body.data) ? body.data : [], body.editor || 'MASTER');
       return json_({ok:true, ...result});
     }
-    assertToken_(body.token);
+    assertSyncReadAuth_(body);
+    if (body.type === 'syncLogin') return json_({ok:true,version:DCM_SYNC_API_VERSION,build:DCM_SYNC_BUILD});
+    if (body.type === 'actionRevision') return json_({ok:true,version:DCM_SYNC_API_VERSION,build:DCM_SYNC_BUILD,revision:actionRevision_()});
     if (body.type === 'srmList') return json_({ok:true,...loadSrmEvents_('')});
     if (body.type === 'srmAppend') return json_({ok:true,...withSrmLock_(()=>appendSrmEvent_(body,'master',''))});
-    if (body.type === 'load') return json_({ok:true, ...loadActions_(false), reasons:loadReasons_(),version:DCM_SYNC_API_VERSION});
+    if (body.type === 'load') {
+      const revision=actionRevision_(); // Capture before the sheet read.
+      return json_({ok:true, ...loadActions_(false), reasons:loadReasons_(),version:DCM_SYNC_API_VERSION,build:DCM_SYNC_BUILD,revision:revision});
+    }
     if (body.type === 'syncReasons') return json_({ok:true,reasons:loadReasons_(),version:DCM_SYNC_API_VERSION});
     if (body.type === 'repairReasonValidation') {
       return json_({ok:true,...withActionLock_(function(){return repairActionReasonValidation();})});
@@ -139,6 +154,22 @@ function assertToken_(token) {
   const expected = PropertiesService.getScriptProperties().getProperty('DCM_SYNC_KEY');
   if (!expected) throw new Error('Apps Script의 DCM_SYNC_KEY가 설정되지 않았습니다.');
   if (!token || token !== expected) throw new Error('공유키가 올바르지 않습니다.');
+}
+
+function assertSyncReadAuth_(body) {
+  // An authenticated Bae master session may read/write Action Sync without a second shared key.
+  // Every request still checks the server-side master secret. Other editors require DCM_SYNC_KEY.
+  if (body && body.editor === '배영훈' && body.masterPassword) {
+    assertMasterPassword_(body.masterPassword);
+    return;
+  }
+  assertToken_(body && body.token);
+}
+function actionRevision_() {
+  return PropertiesService.getScriptProperties().getProperty(DCM_ACTION_REVISION_KEY) || '';
+}
+function markActionRevision_() {
+  PropertiesService.getScriptProperties().setProperty(DCM_ACTION_REVISION_KEY, Utilities.getUuid());
 }
 
 function assertMasterPassword_(password) {
@@ -353,6 +384,7 @@ function savePartnerAction_(partner, body) {
   const edited=new Set(partnerEditedFields_(row[6]));edited.add(field);row[6]=JSON.stringify([...edited]);
   sh.getRange(rowNumber,14,1,7).setValues([row]);
   SpreadsheetApp.flush();
+  markActionRevision_();
   return {key:key,field:field,value:value,updatedAt:now,modifiedBy:row[4]};
 }
 
@@ -428,6 +460,7 @@ function savePartnerActionsBatch_(partner, incoming) {
     sh.getRange(entry.row,14,1,7).setValues([cells]);
   }
   SpreadsheetApp.flush();
+  markActionRevision_();
   return {saved:results.length,results:results,updatedAt:now,version:DCM_SYNC_API_VERSION};
 }
 
@@ -647,6 +680,7 @@ function saveActions_(actions, editor, mode) {
     if(!hist){setupDcmActionSync();hist=ss.getSheetByName(DCM_HISTORY_SHEET);}
     hist.getRange(hist.getLastRow()+1,1,historyRows.length,11).setValues(historyRows);
   }
+  if(changedRows)markActionRevision_();
   return {updatedAt:latestAt,updatedBy:latestBy,changedRows:changedRows};
 }
 
