@@ -28,7 +28,7 @@ window.DCM_ACTION_REASONS={
   }
   function loadMasterSync(){
     if(document.querySelector('script[data-master-sync]'))return;
-    const s=document.createElement('script');s.src='master-data-sync.js?v=20261008v11';s.dataset.masterSync='1';document.head.appendChild(s);
+    const s=document.createElement('script');s.src='master-data-sync.js?v=20261020fast1';s.dataset.masterSync='1';document.head.appendChild(s);
   }
   function loadData(){
     try{const x=JSON.parse(localStorage.getItem('dcm-dashboard-v8-data'));if(Array.isArray(x)&&x.length)return x;}catch(e){}
