@@ -39,7 +39,8 @@ function changeScope(data,month){const L=window.DCMLogic;if(!L||!month)return []
 function renderSelectedChangeType(){
   const L=window.DCMLogic,select=$('changeType'),body=$('changeBody'),count=$('changeCount');if(!L||!select||!body||!count)return;
   const data=changeData(),cur=$('month')?.value||'',ms=changeMonths(data),idx=ms.indexOf(cur),prev=idx>0?ms[idx-1]:null;
-  const ch=L.compare(prev?changeScope(data,prev):[],changeScope(data,cur)),type=select.value;let rows=[];
+  if(!prev){body.innerHTML='<tr><td colspan="8" class="empty">비교 자료 없음 · 이전 월 자료를 반영하면 변화를 확인할 수 있습니다.</td></tr>';count.textContent='비교 자료 없음';return;}
+  const ch=L.compare(changeScope(data,prev),changeScope(data,cur)),type=select.value;let rows=[];
   if(type==='new')rows=(ch.newSupply||[]).map(r=>({kind:'신규 공급',...r,corp:(r.entities||[]).map(x=>`${x.outlet!==r.outlet?x.outlet+' / ':''}${x.entity} ${x.status}`).join(' · '),change:'미공급 → O/X',detail:`신규 공급 · ${(r.entities||[]).map(x=>`${x.entity} 연동 ${x.status}`).join(' / ')}`}));
   else if(type==='stop')rows=(ch.stoppedSupply||[]).map(r=>({kind:'공급 중단',...r,corp:(r.entities||[]).map(x=>`${x.outlet!==r.outlet?x.outlet+' / ':''}${x.entity} (기존 ${x.status})`).join(' · '),change:'O/X → 미공급',detail:`공급 중단 · 기존 ${(r.entities||[]).map(x=>`${x.entity} 연동 ${x.status}`).join(' / ')}`}));
   else if(type==='x2o')rows=(ch.xToO||[]).map(r=>({kind:'X→O 개선',...r,corp:r.entity,change:'X → O',detail:'연동 개선'}));
@@ -56,7 +57,7 @@ function installChangeFilterFix(){
 function installLayout(){
   if(!document.querySelector('link[href^="control-tower-layout.css"]')){const link=document.createElement('link');link.rel='stylesheet';link.href='control-tower-layout.css?v=4';document.head.appendChild(link);}
   const main=document.querySelector('main.wrap'),filters=main?.querySelector('.filters'),hero=main?.querySelector('.ct-hero'),top=main?.querySelector('.top');if(!main||!filters||!hero)return;
-  ensureHeroKpis();if(top&&top.nextElementSibling!==hero)top.insertAdjacentElement('afterend',hero);hero.insertAdjacentElement('afterend',filters);filters.classList.add('ct-compact-filters');
+  ensureHeroKpis();filters.id='ctFilters';if(top&&top.nextElementSibling!==filters)top.insertAdjacentElement('afterend',filters);filters.insertAdjacentElement('afterend',hero);filters.classList.add('ct-compact-filters');
   const oldDetail=$('ctDetail');if(oldDetail){const body=oldDetail.querySelector('.ct-detail-body');if(body){[...body.children].forEach(el=>main.insertBefore(el,oldDetail));}oldDetail.remove();}
   const group=main.querySelector('.entity');
   const outlet=[...main.querySelectorAll('.table-panel')].find(x=>x.querySelector('h2')?.textContent.includes('업체별 연동률 현황'));
@@ -70,12 +71,16 @@ function installLayout(){
   const action=ctPanels.find(x=>x.querySelector('h2')?.textContent.includes('통합 Action Board'));
   if(group){group.id='ctGroup';group.classList.add('ct-overview-section');}if(outlet){outlet.id='ctOutlet';outlet.classList.add('ct-overview-section');}
   if(aging)aging.id='ctAging';if(ai)ai.id='ctAiSection';if(risk)risk.id='ctRisk';if(action)action.id='ctAction';if(changes){changes.id='ctChanges';trimDuplicateChangeCards(changes);}if(need)need.id='ctNeed';if(legacyKpis)legacyKpis.classList.add('ct-source-kpis');
-  let anchor=filters;[group,outlet,changes,aging,ai,action,need].forEach(el=>{if(!el)return;anchor.insertAdjacentElement('afterend',el);anchor=el;});
+  let anchor=hero;[group,outlet,changes,aging,ai,action,need].forEach(el=>{if(!el)return;anchor.insertAdjacentElement('afterend',el);anchor=el;});
    const srm=$('srmWorkflow');if(srm&&action)action.insertAdjacentElement('afterend',srm);
    if(legacyKpis)main.appendChild(legacyKpis);
-  let nav=$('ctQuickNav');if(!nav){nav=document.createElement('div');nav.id='ctQuickNav';nav.className='ct-quick-nav';filters.insertAdjacentElement('afterend',nav);}
-  nav.innerHTML='<button data-jump="ctGroup">그룹사별 현황</button><button data-jump="ctOutlet">업체별 현황</button><button data-jump="ctChanges">전월 대비 변화</button><button data-jump="ctAging">미연동 세부 현황</button><button data-jump="ctAction">통합 Action Board</button><button data-jump="ctNeed">연동 필요 리스트</button>';
-  document.querySelectorAll('#ctQuickNav [data-jump]').forEach(btn=>btn.onclick=()=>{const target=$(btn.dataset.jump);if(!target)return;target.scrollIntoView({behavior:'smooth',block:'start'});});
+  let nav=$('ctQuickNav');if(!nav){nav=document.createElement('nav');nav.id='ctQuickNav';nav.className='ct-quick-nav';nav.setAttribute('aria-label','대시보드 구역');filters.insertAdjacentElement('afterend',nav);}
+  nav.innerHTML='<button data-jump="ctFilters">조회 범위</button><button data-jump="ctGroup">그룹사별 현황</button><button data-jump="ctOutlet">업체별 현황</button><button data-jump="ctChanges">전월 대비 변화</button><button data-jump="ctAging">미연동 세부 현황</button><button data-jump="ctAction">통합 Action Board</button><button data-jump="srmWorkflow">조치 진행 현황</button><button data-jump="ctNeed">연동 필요 리스트</button>';
+  const navButtons=[...document.querySelectorAll('#ctQuickNav [data-jump]')];
+  const activate=id=>navButtons.forEach(b=>b.setAttribute('aria-current',b.dataset.jump===id?'location':'false'));
+  navButtons.forEach(btn=>btn.onclick=()=>{const target=$(btn.dataset.jump);if(!target)return;activate(btn.dataset.jump);target.scrollIntoView({behavior:'smooth',block:'start'});target.tabIndex=-1;target.focus({preventScroll:true});});
+  activate('ctFilters');
+  if(window.IntersectionObserver){const observer=new IntersectionObserver(entries=>{const visible=entries.filter(e=>e.isIntersecting).sort((a,b)=>a.boundingClientRect.top-b.boundingClientRect.top);if(visible.length)activate(visible[0].target.id);},{rootMargin:'-60px 0px -65% 0px'});navButtons.forEach(b=>{const target=$(b.dataset.jump);if(target)observer.observe(target);});}
   syncHeroSupportKpis();['kpiAbs','kpiSupply','kpiAbsSub','kpiSupplySub','ctDelta'].forEach(id=>{const node=$(id);if(node)new MutationObserver(syncHeroSupportKpis).observe(node,{childList:true,subtree:true,characterData:true});});['manager','outlet','month'].forEach(id=>$(id)?.addEventListener('change',()=>setTimeout(syncHeroSupportKpis,80)));
 }
 function localActions(){try{const x=JSON.parse(localStorage.getItem(ACTION_KEY));return Array.isArray(x)?x:[];}catch(e){return [];}}
@@ -126,7 +131,7 @@ function masterInputMarkup(r,field){
 function buildBoardContext(){
  const L=window.DCMLogic||{},data=changeData(),months=changeMonths(data),cur=$('month')?.value||months[months.length-1]||'',idx=months.indexOf(cur),prev=idx>0?months[idx-1]:null;
  window.DCM_MONTHLY_ACTION_HISTORY?.refresh(data);
- const curr=changeScope(data,cur),prior=prev?changeScope(data,prev):[],changes=L.compare(prior,curr);
+ const curr=changeScope(data,cur),prior=prev?changeScope(data,prev):[],changes=prev?L.compare(prior,curr):{newSupply:[],stoppedSupply:[],xToO:[],oToX:[]};
  const risk=window.DCMActionSync?.allRisk?.()||[],riskMap=new Map(risk.map(r=>[r.key,r]));
  const stored=new Map(localActions().map(a=>[a.key,a]));
  const prevMap=new Map(prior.map(r=>[r.outlet+'|||'+r.businessNo,r]));
@@ -144,8 +149,7 @@ function buildBoardContext(){
   const base=riskMap.get(k)||stored.get(k)||{};
   const entityStreak={};let streak=0;
   for(const e of L.E||[]){
-   let n=0;
-   for(let i=idx;i>=0;i--){const at=rowHistory.get(k)?.get(months[i]);if(L.normStatus(at?.statuses?.[e])==='X')n++;else break;}
+   const n=L.consecutiveX(cur,m=>rowHistory.get(k)?.get(m)?.statuses?.[e]);
    entityStreak[e]=n;streak=Math.max(streak,n);
   }
   const currentX=(L.E||[]).filter(e=>L.normStatus(r.statuses?.[e])==='X').length;
@@ -186,7 +190,7 @@ function buildBoardContext(){
  }
  const rows=[...byKey.values()].sort((a,b)=>b.score-a.score||b.xCount-a.xCount||
    String(a.businessName||'').localeCompare(String(b.businessName||''),'ko'));
- return {rows,improved,worsened,newSupply,stoppedSupply,prevMap,month:cur};
+ return {rows,improved,worsened,newSupply,stoppedSupply,prevMap,month:cur,hasPrevious:!!prev};
 }
 function filterUnifiedRows(ctx,view='x',entity='all',priority='all',search=''){
  const L=window.DCMLogic||{},E=L.E||[],scope=entity==='all'?E:[entity];
@@ -208,8 +212,23 @@ function filterUnifiedRows(ctx,view='x',entity='all',priority='all',search=''){
    default:ok=false;
   }
   if(!ok)return false;
-  return !q||[r.businessName,r.businessNo,r.outlet,r.manager].some(v=>String(v||'').toLocaleLowerCase('ko').includes(q));
+  return !q||[r.businessName,r.businessNo,r.outlet,r.manager].some(v=>String(v||'').toLocaleLowerCase('ko').includes(q))||(/^\d[\d\s-]*$/.test(q)&&String(r.businessNo||'').replace(/\D/g,'').includes(q.replace(/\D/g,'')));
  });
+}
+function scopeText(){return [$('month')?.value||'기준월 없음',($('manager')?.value||'전체')==='전체'?'전체 담당자':$('manager').value,($('outlet')?.value||'전체')==='전체'?'전체 업체/권역':$('outlet').value].join(' · ');}
+function selectOutlet(outlet){
+ const el=$('outlet');if(!el||![...el.options].some(o=>o.value===outlet))return false;
+ el.value=outlet;el.dispatchEvent(new Event('change',{bubbles:true}));setActionView('x');return true;
+}
+function actionCsv(ctx,rows){
+ const field=v=>{let s=String(v??'');if(/^[\s\u0000-\u001f\u007f]*[=+\-@]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
+ const partner=(r,f)=>(r.partnerAction?.editedFields||[]).includes(f)?r.partnerAction[f]||'':'';
+ const values=[['기준월','업체/권역','담당자','사업자번호','실사업자명',...(window.DCMLogic?.E||[]),'미연동 기간','마스터 원인','마스터 조치계획','마스터 상태','업체 원인','업체 조치계획','업체 상태'],...rows.map(r=>{const m=r.monthlyHistorical?r.masterAction||{}:r;return [ctx.month,r.outlet,r.manager,"'"+String(r.businessNo||''),r.businessName,...(window.DCMLogic?.E||[]).map(e=>r.statuses?.[e]||''),r.xCount?String(r.aging||'').replace(/M$/,'개월'):'',m.reasonCode,m.plan,m.status?statusLabel(m.status):'',partner(r,'reasonCode'),partner(r,'plan'),partner(r,'status')?statusLabel(partner(r,'status')):''];})];
+ return '\uFEFF'+values.map(row=>row.map(field).join(',')).join('\r\n');
+}
+function exportActionRows(){
+ const ctx=buildBoardContext(),rows=filterUnifiedRows(ctx,actionView,'all',actionPriority,actionSearch);
+ const url=URL.createObjectURL(new Blob([actionCsv(ctx,rows)],{type:'text/csv;charset=utf-8;'})),link=document.createElement('a');link.href=url;link.download='DCM_Action_'+ctx.month+'.csv';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function renderAllXActionBoard(){
  const tbody=$('ctActionBody');if(!actionOpen||!tbody)return;
@@ -237,7 +256,7 @@ function renderAllXActionBoard(){
   E.map(e=>status(r,e)).join('')+
   '<td data-label="미연동 기간">'+esc(r.xCount?String(r.aging||'0M').replace(/M$/,'개월'):'—')+'</td>'+
   ['reasonCode','plan','status'].map(f=>dual(r,f)).join('')+'</tr>').join('')||
-  '<tr><td colspan="10" class="empty">선택한 조건에 해당하는 거래처가 없습니다. 필터를 변경해 주세요.</td></tr>';
+  '<tr><td colspan="10" class="empty">'+(!ctx.hasPrevious&&['improved','worsened','new','stopped'].includes(actionView)?'비교 자료 없음 · 이전 월 자료가 필요합니다.':'선택한 조건에 해당하는 거래처가 없습니다. 목록 조건을 초기화하거나 조회 범위를 변경해 주세요.')+'</td></tr>';
  tbody.querySelectorAll('[data-allx-field]').forEach(el=>el.addEventListener('change',()=>{
   saveBoardField(el.dataset.key,el.dataset.allxField,el.value);
  }));
@@ -245,7 +264,10 @@ function renderAllXActionBoard(){
  const assessed=rows.reduce((n,r)=>n+E.filter(e=>L.normStatus(r.statuses?.[e])).length,0);
  const xcount=rows.reduce((n,r)=>n+E.filter(e=>L.normStatus(r.statuses?.[e])==='X').length,0);
  if($('ctActionViewName'))$('ctActionViewName').textContent=scopedViewLabel(actionView,ctx.month);
- if($('ctActionCount'))$('ctActionCount').textContent=rows.length.toLocaleString()+'처 · O '+(assessed-xcount).toLocaleString()+'건 / X '+xcount.toLocaleString()+'건';
+ const scope=scopeText();if($('ctActionScope'))$('ctActionScope').textContent=scope+(actionSearch.trim()?' · 검색: '+actionSearch.trim():'');if($('ctHeroScope'))$('ctHeroScope').textContent=scope;
+ if($('ctScopeReset'))$('ctScopeReset').hidden=($('manager')?.value||'전체')==='전체'&&($('outlet')?.value||'전체')==='전체';
+ if($('ctActionExport'))$('ctActionExport').disabled=!rows.length;
+ if($('ctActionCount'))$('ctActionCount').textContent=!ctx.hasPrevious&&['improved','worsened','new','stopped'].includes(actionView)?'비교 자료 없음':rows.length.toLocaleString()+'처 · O '+(assessed-xcount).toLocaleString()+'건 / X '+xcount.toLocaleString()+'건';
  const shown=$('ctActionShown'),more=$('ctActionMore'),all=$('ctActionAll');
  if(shown)shown.textContent=Math.min(visible.length,rows.length).toLocaleString()+' / '+rows.length.toLocaleString()+'처 표시';
  if(more)more.hidden=visible.length>=rows.length;
@@ -289,6 +311,8 @@ function installAllXBoard(){
   });
  }
  $('ctActionClear')?.addEventListener('click',()=>setActionView('supply',{scroll:false}));
+ $('ctActionExport')?.addEventListener('click',exportActionRows);
+ $('ctScopeReset')?.addEventListener('click',()=>{for(const id of ['manager','outlet']){const el=$(id);if(el){el.value='전체';el.dispatchEvent(new Event('change',{bubbles:true}));}}setActionView('supply',{scroll:false});});
  document.querySelectorAll('.ct-hero .ct-kpi[data-kpi]').forEach(card=>{
   const view=KPI_VIEWS[card.dataset.kpi];if(!view)return;
   card.setAttribute('role','button');card.tabIndex=0;card.setAttribute('aria-controls','ctAction');
@@ -305,7 +329,7 @@ function installAllXBoard(){
  renderAllXActionBoard();
 }
 window.DCMUnifiedAction={
- filter:filterUnifiedRows,build:buildBoardContext,select:setActionView,label:scopedViewLabel,
+ filter:filterUnifiedRows,build:buildBoardContext,select:setActionView,selectOutlet,label:scopedViewLabel,
  viewRows:()=>buildBoardContext().rows.map(r=>{
   const m=r.monthlyHistorical?r.masterAction||{}:r;
   const p=r.partnerAction||{};

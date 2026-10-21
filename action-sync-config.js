@@ -49,7 +49,7 @@ window.DCM_ACTION_REASONS={
     let persistAbs=0,persistState=0,all3Abs=0;
     curr.forEach(r=>{
       const h=hist.get(rowKey(r));let hasPersist=false;
-      E.forEach(e=>{let streak=0;for(let i=months.length-1;i>=0;i--){if(norm(h?.get(months[i])?.statuses?.[e])==='X')streak++;else break;}if(streak>=2){persistState++;hasPersist=true;}});
+      E.forEach(e=>{const streak=L.consecutiveX(cur,m=>h?.get(m)?.statuses?.[e]);if(streak>=2){persistState++;hasPersist=true;}});
       if(hasPersist)persistAbs++;
       if(E.length===3&&E.every(e=>norm(r.statuses?.[e])==='X'))all3Abs++;
     });

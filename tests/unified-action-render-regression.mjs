@@ -15,7 +15,7 @@ assert.ok(!legacySource.includes("const ab=$('ctActionBody');if(ab)ab.innerHTML=
  'Legacy 9-column render must not write into the unified tbody');
 assert.ok(!/querySelectorAll\(['"]#ctActionBody tr['"]\)/.test(syncSource),
  'Action metadata must not depend on DOM column offsets');
-assert.ok(html.includes('control-tower.js?v=20261021reliability1'),
+assert.ok(html.includes('control-tower.js?v=20261021usability1'),
  'Cache-busted legacy renderer is required on deployed clients');
 
 

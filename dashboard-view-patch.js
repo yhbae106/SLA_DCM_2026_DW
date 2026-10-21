@@ -12,7 +12,7 @@ function filter(rows,month,outlet){return L.filterRecords(rows,{month,manager:$(
 function pct(rate){return rate==null?'—':`${(rate*100).toFixed(1)}%`;}
 function pp(delta){if(delta==null||!Number.isFinite(delta))return '—';return `${delta>=0?'▲':'▼'} ${Math.abs(delta*100).toFixed(1)}%p`;}
 function shortMonth(m){if(!m)return '';const p=m.split('-');return `${Number(p[1])}월`;}
-function rateStatus(rate,delta){const v=(rate??0)*100,d=(delta??0)*100;let label=v>=90?'우수':v>=80?'양호':v>=65?'주의':'위험';if(d<=-5&&label==='우수')label='양호';else if(d<=-5&&label==='양호')label='주의';return label;}
+function rateStatus(rate,delta){if(rate==null)return '미평가';const v=rate*100,d=(delta??0)*100;let label=v>=90?'우수':v>=80?'양호':v>=65?'주의':'위험';if(d<=-5&&label==='우수')label='양호';else if(d<=-5&&label==='양호')label='주의';return label;}
 function renderEntities(){
  const box=$('entityCards');if(!box||!L)return;
  const rows=data(),cur=$('month')?.value||'',ms=months(rows),idx=ms.indexOf(cur),chartMonths=ms.slice(Math.max(0,idx-2),idx+1),prev=idx>0?ms[idx-1]:null;
@@ -20,7 +20,7 @@ function renderEntities(){
  const cs=L.summarize(curScope),ps=prev?L.summarize(prevScope):null;
  box.innerHTML=L.E.map((e,i)=>{
    const c=cs.byEntity[e],p=ps?.byEntity?.[e],delta=(c?.rate!=null&&p?.rate!=null)?c.rate-p.rate:null;
-   const bars=chartMonths.map(m=>{const s=L.summarize(filter(rows,m)),r=s.byEntity[e]?.rate??0,h=Math.max(8,Math.round(r*76));return `<div class="entity-trend-col"><span>${pct(r)}</span><i style="height:${h}px"></i><b>${shortMonth(m)}</b></div>`;}).join('');
+   const bars=chartMonths.map(m=>{const s=L.summarize(filter(rows,m)),r=s.byEntity[e]?.rate,h=r==null?0:Math.round(r*76);return `<div class="entity-trend-col${r==null?' is-unassessed':''}" title="${r==null?'평가 데이터 없음':pct(r)}"><span>${pct(r)}</span><i style="height:${h}px"></i><b>${shortMonth(m)}</b></div>`;}).join('');
    return `<div class="entity-card entity-card-v2"><div class="entity-summary"><div class="entity-name">${esc(e)}</div><div class="entity-rate">${pct(c?.rate)}</div><div class="entity-delta ${delta==null?'':delta>=0?'up':'down'}">전월 대비 ${pp(delta)}</div><div class="mini"><span>O ${(c?.O||0).toLocaleString()}</span><span>X ${(c?.X||0).toLocaleString()}</span><span>평가 ${((c?.O||0)+(c?.X||0)).toLocaleString()}</span></div></div><div class="entity-trend" aria-label="${esc(e)} 월별 연동률">${bars}</div></div>`;
  }).join('');
 }
@@ -35,20 +35,22 @@ function renderOutlets(){
    const c=L.summarize(L.filterRecords(rows,{month:cur,outlet:o}));
    const p=prev?L.summarize(L.filterRecords(rows,{month:prev,outlet:o})):null;
    const delta=(c.rate!=null&&p?.rate!=null)?c.rate-p.rate:null,status=rateStatus(c.rate,delta);
-   return `<tr><td><strong>${esc(o)}</strong></td><td>${esc(CFG.managerByOutlet?.[o]||'')}</td>${L.E.map(e=>`<td>${pct(c.byEntity[e].rate)} <small>(O ${c.byEntity[e].O}/X ${c.byEntity[e].X})</small></td>`).join('')}<td><strong>${pct(c.rate)}</strong><br><small>O ${c.O}/${c.evaluated}</small></td><td class="outlet-delta ${delta==null?'':delta>=0?'up':'down'}">${pp(delta)}</td><td><span class="outlet-status status-${status}">${status}</span></td><td>${c.X.toLocaleString()}</td><td><strong>${c.needAbsolute.toLocaleString()}</strong></td><td>${c.suppliedAbsolute.toLocaleString()}</td></tr>`;
+   return `<tr><td><button type="button" class="ct-outlet-link" data-outlet-open="${esc(o)}" aria-controls="ctAction" title="${esc(o)} 우선 조치 필요처 보기">${esc(o)} <span aria-hidden="true">↗</span></button></td><td>${esc(CFG.managerByOutlet?.[o]||'')}</td>${L.E.map(e=>`<td>${pct(c.byEntity[e].rate)} <small>(O ${c.byEntity[e].O}/X ${c.byEntity[e].X})</small></td>`).join('')}<td><strong>${pct(c.rate)}</strong><br><small>O ${c.O}/${c.evaluated}</small></td><td class="outlet-delta ${delta==null?'':delta>=0?'up':'down'}">${pp(delta)}</td><td><span class="outlet-status status-${status}">${status}</span></td><td>${c.X.toLocaleString()}</td><td><strong>${c.needAbsolute.toLocaleString()}</strong></td><td>${c.suppliedAbsolute.toLocaleString()}</td></tr>`;
  }).join('')||'<tr><td colspan="11" class="empty">데이터가 없습니다.</td></tr>';
 }
 function relabelAging(){
- const labels=[['ctAge1','1개월'],['ctAge2','2개월'],['ctAge3','3개월'],['ctAge46','4~6개월'],['ctAge6','6개월+']];
+ const labels=[['ctAge1','1개월'],['ctAge2','2개월'],['ctAge3','3개월'],['ctAge46','4~6개월'],['ctAge6','7개월 이상']];
  labels.forEach(([id,label])=>{const strong=$(id),box=strong?.closest('.ct-age');if(!box)return;for(const n of [...box.childNodes])if(n.nodeType===3)n.remove();box.insertBefore(document.createTextNode(label),strong);});
 }
 function renderAll(){renderEntities();renderOutlets();relabelAging();}
 function schedule(delay=30){clearTimeout(renderTimer);renderTimer=setTimeout(renderAll,delay);}
 function start(){
  renderAll();
+ $('outletBody')?.addEventListener('click',e=>{const button=e.target.closest('[data-outlet-open]');if(button)window.DCMUnifiedAction?.selectOutlet(button.dataset.outletOpen);});
  ['manager','outlet','month'].forEach(id=>$(id)?.addEventListener('change',()=>schedule(20)));
  const upload=$('uploadMsg');if(upload)new MutationObserver(()=>schedule(80)).observe(upload,{childList:true,subtree:true,characterData:true});
  window.addEventListener('storage',e=>{if(e.key===DATA_KEY)schedule(50);});
+ window.addEventListener('dcm-dashboard-data-committed',()=>schedule(0));
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(start,180),{once:true});else setTimeout(start,180);
 })();

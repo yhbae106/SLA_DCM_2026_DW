@@ -38,6 +38,9 @@ ok('all JavaScript parses');
 await import('./monthly-history-regression.mjs');
 await import('./srm-metrics-regression.mjs');
 await import('./srm-ui-regression.mjs');
+await import('./srm-list-regression.mjs');
+await import('./calendar-streak-regression.mjs');
+await import('./operational-usability-regression.mjs');
 await import('./srm-action-parity-regression.mjs');
 await import('./sync-login-regression.mjs');
 await import('./data-lifecycle-regression.mjs');
@@ -63,8 +66,8 @@ ok('core DCM calculations');
 
 const localAssets=[...new Set(refs)].filter(exists);
 const initialBytes=fs.statSync('index.html').size+localAssets.reduce((s,p)=>s+fs.statSync(p).size,0);
-// Main baseline: 577572 bytes. Lifecycle/schema/provenance guards add ~8.2KB; retain a tight dependency-free ceiling.
-if(initialBytes>590000)fail('Initial local payload budget exceeded: '+initialBytes);
+// Reliability baseline: 586098 bytes. Operational scope, safe CSV and SRM navigation remain dependency-free within 600KB.
+if(initialBytes>600000)fail('Initial local payload budget exceeded: '+initialBytes);
 ok('initial local payload '+Math.round(initialBytes/1024)+' KB');
 
 const expectedKpiOrder=['ctRate','ctDelta','ctX','ctNeedAbs','ctPersist','ctAll3','ctX2O','ctO2X','ctSupply'];
