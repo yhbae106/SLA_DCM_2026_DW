@@ -15,7 +15,7 @@ assert.ok(!legacySource.includes("const ab=$('ctActionBody');if(ab)ab.innerHTML=
  'Legacy 9-column render must not write into the unified tbody');
 assert.ok(!/querySelectorAll\(['"]#ctActionBody tr['"]\)/.test(syncSource),
  'Action metadata must not depend on DOM column offsets');
-assert.ok(html.includes('control-tower.js?v=20261015ui2'),
+assert.ok(html.includes('control-tower.js?v=20261021reliability1'),
  'Cache-busted legacy renderer is required on deployed clients');
 
 
@@ -169,3 +169,4 @@ assert.equal(saved.aging,'4M','Risk aging must be from source records');
 assert.equal(saved.plan,'기존 조치계획','Action changes must remain intact');
 assert.equal(saved.modifiedBy,'검증 담당자');
 console.log('PASS UNIFIED 10-COLUMN HARNESS: default 50, next 50, all 125, filter, legacy redraw, Action/reason sync, source-backed save metadata');
+

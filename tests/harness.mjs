@@ -1,7 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import vm from 'node:vm';
-import {execFileSync} from 'node:child_process';
 
 const root=process.cwd(),fail=m=>{throw new Error(m)},ok=m=>console.log('PASS',m);
 const read=p=>fs.readFileSync(path.join(root,p),'utf8');
@@ -34,13 +33,15 @@ if(exists('SLA_DCM_2026_Partner'))fail('Legacy embedded Partner copy must stay r
 ok('legacy embedded Partner copy removed');
 
 function walk(dir='.'){return fs.readdirSync(dir,{withFileTypes:true}).flatMap(e=>{const p=path.join(dir,e.name);if(e.name==='.git'||e.name==='node_modules')return[];return e.isDirectory()?walk(p):[p]})}
-for(const file of walk().filter(x=>x.endsWith('.js'))){execFileSync(process.execPath,['--check',file],{stdio:'pipe'});}
+for(const file of walk().filter(x=>x.endsWith('.js'))){new vm.Script(read(file),{filename:file});}
 ok('all JavaScript parses');
 await import('./monthly-history-regression.mjs');
 await import('./srm-metrics-regression.mjs');
 await import('./srm-ui-regression.mjs');
 await import('./srm-action-parity-regression.mjs');
 await import('./sync-login-regression.mjs');
+await import('./data-lifecycle-regression.mjs');
+await import('./action-lifecycle-regression.mjs');
 
 const ctx={};ctx.window=ctx;ctx.globalThis=ctx;vm.createContext(ctx);vm.runInContext(read('logic.js'),ctx);
 const L=ctx.DCMLogic;if(!L)fail('DCMLogic not exported');
@@ -62,7 +63,8 @@ ok('core DCM calculations');
 
 const localAssets=[...new Set(refs)].filter(exists);
 const initialBytes=fs.statSync('index.html').size+localAssets.reduce((s,p)=>s+fs.statSync(p).size,0);
-if(initialBytes>577000)fail('Initial local payload budget exceeded: '+initialBytes);
+// Main baseline: 577572 bytes. Lifecycle/schema/provenance guards add ~8.2KB; retain a tight dependency-free ceiling.
+if(initialBytes>590000)fail('Initial local payload budget exceeded: '+initialBytes);
 ok('initial local payload '+Math.round(initialBytes/1024)+' KB');
 
 const expectedKpiOrder=['ctRate','ctDelta','ctX','ctNeedAbs','ctPersist','ctAll3','ctX2O','ctO2X','ctSupply'];

@@ -105,6 +105,7 @@ assert.equal(sandbox.DCMActionSync.isConnected(),false);
 
 mode='correct';el('ctSyncKey').value='valid-read-key';
 await click('ctSyncConnect');
+await sandbox.DCMActionSync.pull(); // Login authenticates first; await its background load before testing PIN feedback.
 assert.equal(sandbox.DCMActionSync.isConnected(),true);
 assert.equal(el('ctSyncConnect').textContent,'로그아웃');
 assert.equal(el('ctSyncKey').hidden,true);
@@ -141,3 +142,4 @@ assert.ok(requests.some(x=>x.type==='load'),'Login must load shared Actions afte
 assert.ok(!requests.some(x=>x.type==='save'),'Login silently made write or snapshot calls');
 assert.match(el('ctSyncMeta').textContent,/미전송 수정/);
 console.log('PASS SYNC LOGIN: explicit click, wrong-key/404, session-only secret, scoped edit PIN, pending edits preserved, no H repair');
+
