@@ -41,12 +41,6 @@
 .ct-hero .ct-kpi[data-kpi]:hover{border-color:#8bb8e9;transform:translateY(-1px);box-shadow:0 5px 18px rgba(30,84,149,.13);}
 .ct-hero .ct-kpi[data-kpi]:focus-visible{outline:3px solid #277ddd;outline-offset:3px;}
 .ct-hero .ct-kpi[data-kpi].ct-kpi-selected{border-color:#3581d6;box-shadow:0 0 0 2px rgba(43,118,208,.17);}
-.ct-quick-nav button[data-jump="ctGroup"]:after{content:'그룹사별 현황';}
-.ct-quick-nav button[data-jump="ctOutlet"]:after{content:'업체별 현황';}
-.ct-quick-nav button[data-jump="ctChanges"]:after{content:'전월 대비 변화';}
-.ct-quick-nav button[data-jump="ctAging"]:after{content:'미연동 세부 현황';}
-.ct-quick-nav button[data-jump="ctAction"]:after{content:'통합 Action Board';}
-.ct-quick-nav button[data-jump="ctNeed"]:after{content:'연동 필요 리스트';}
 @media(max-width:1350px){
  .ct-action-filterbar{grid-template-columns:repeat(3,minmax(0,1fr));}
  .ct-action-filterbar .ct-action-search-label{grid-column:span 2;}

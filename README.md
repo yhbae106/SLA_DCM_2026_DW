@@ -60,7 +60,7 @@ node tests/harness.mjs
 
 ## 배포
 
-`.github/workflows/pages.yml`은 Node 22에서 전체 하네스가 성공해야 Pages 아티팩트를 배포합니다. Pages는 GitHub Actions 배포 방식을 사용합니다. 운영 편의성 개선 자산의 버전은 `20261021usability1`입니다. 추가 런타임 의존성 없이 초기 로컬 자산은 600KB 이내로 검증합니다.
+`.github/workflows/pages.yml`은 Node 22에서 전체 하네스가 성공해야 Pages 아티팩트를 배포합니다. Pages는 GitHub Actions 배포 방식을 사용합니다. 운영 편의성 개선 자산의 버전은 `20261021usability2`입니다. 추가 런타임 의존성 없이 초기 로컬 자산은 600KB 이내로 검증합니다.
 
 기존 API 버전 `20261008-seven-reasons-fast-v3` 계약을 사용하며 이번 변경은 Apps Script API를 변경하지 않습니다. 향후 `Code.gs` 변경 시 GitHub 반영과 운영 Apps Script 배포는 별도로 진행해야 합니다. 기본 월별 자료는 공개 정적 파일에 포함됩니다.
 
@@ -81,4 +81,4 @@ node tests/harness.mjs
 
 SRM 검색·상태·표시량은 파트너 로그아웃 또는 계정 전환 시 초기화합니다. 같은 계정에서 월·권역을 바꾸면 검색과 작성 중 협의 초안을 유지합니다.
 
-최종 초기 정적 자산은 596,337바이트입니다. 변경 런타임의 캐시 버전은 `20261021usability1`이며, 추가 라이브러리나 초기 요청 없이 기존 로딩 방식을 유지합니다.
+최종 초기 정적 자산은 595,848바이트입니다. 변경 런타임의 캐시 버전은 `20261021usability2`이며, 추가 라이브러리나 초기 요청 없이 기존 로딩 방식을 유지합니다.
