@@ -105,3 +105,13 @@ function fixture(saved){
  f.change('manager','전체');f.change('outlet','전체');assert.equal(f.el('needCount').textContent,'62처','Same business ID in two outlets counts as two relationships');
  console.log('PASS OPERATIONAL evaluation: missing values differ from 0%, and absolute retailer counts respect outlet identity');
 }
+
+{
+ const f=fixture({manager:'전체',outlet:'전체',month:'2026-09'});
+ const count=()=> (f.el('needBody').innerHTML.match(/<tr>/g)||[]).length;
+ assert.equal(count(),60);assert.equal(f.el('needBodyMore').hidden,false);
+ f.el('needBodyMore').onclick();assert.equal(count(),62);assert.equal(f.el('needBodyMore').hidden,true);
+ f.env.__app.render();assert.equal(count(),60,'Filter renders restart pagination');
+ f.change('month','2026-08');assert.equal(f.el('changeBodyMore').hidden,true,'No prior month cannot expose stale rows');
+ console.log('PASS bounded read-only lists: all rows reachable, counts retained, pagination and empty period reset');
+}
