@@ -18,7 +18,8 @@ const originalSetItem=Storage.prototype.setItem;
 let suppressSync=false,pollTimer=null,snapshotTimer=null,lastMeta=null,lastPullAt=0,lastEditAt=0,syncBroken=false,serverReady=false,flushingPending=false,signedIn=false,loginBusy=false,lastRevision=null,revisionSupported=false;
 let authGeneration=0,actionEpoch=0,pullTask=null;
 const activeRequests=new Set();
-function retireSession(){authGeneration++;actionEpoch++;activeRequests.forEach(c=>c.abort());activeRequests.clear();clearTimeout(snapshotTimer);snapshotTimer=null;pullTask=null;flushingPending=false;loginBusy=false;}
+let revisionBusy=false,revisionRetryAt=0,revisionFailures=0;
+function retireSession(){revisionBusy=false;revisionRetryAt=0;revisionFailures=0;authGeneration++;actionEpoch++;activeRequests.forEach(c=>c.abort());activeRequests.clear();clearTimeout(snapshotTimer);snapshotTimer=null;pullTask=null;flushingPending=false;loginBusy=false;}
 function retiredRequest(){const e=Error('종료된 세션의 요청입니다.');e.stale=true;return e;}
 function validateActions(rows){
  if(!Array.isArray(rows))throw Error('공용 조치 목록의 형식을 확인할 수 없습니다.');
@@ -386,12 +387,16 @@ Storage.prototype.setItem=function(k,v){
  }catch(e){}
 };
 async function checkRevision(){
- if(!signedIn||!serverReady||!hasReadAuth()||document.visibilityState!=='visible'||isEditing())return;
+ if(revisionBusy||Date.now()<revisionRetryAt||navigator.onLine===false||!signedIn||!serverReady||!hasReadAuth()||document.visibilityState!=='visible'||isEditing())return;
+ const generation=authGeneration;revisionBusy=true;
  try{
   const json=await post({type:'actionRevision'});
+  if(generation!==authGeneration)return;
+  revisionFailures=0;revisionRetryAt=0;
   if(json.version!==REQUIRED_API_VERSION)return;
   if(!revisionSupported||json.revision!==lastRevision){await pullRemote(false);}
- }catch(e){if(!e.stale)console.warn('[DCM Action Sync] revision check failed',e);}
+ }catch(e){if(generation===authGeneration&&!e.stale){revisionRetryAt=Date.now()+Math.min(300000,30000*2**Math.min(revisionFailures++,4));console.warn('[DCM Action Sync] revision check failed',e);}}
+ finally{if(generation===authGeneration)revisionBusy=false;}
 }
 function start(){
  // Preserve historic user-selected reason codes; remapping is not safe without server mapping.
@@ -408,10 +413,11 @@ function start(){
   quickLogin().catch(e=>{if(e.stale)return;serverReady=false;signedIn=false;setStatus('공용 Sync 재인증 필요','error',e.message);});
  }
  else setStatus('로그인 필요','idle','담당자 선택 후 공유키를 입력하고 로그인 버튼을 눌러주세요.');
- if(pollTimer)clearInterval(pollTimer);const poll=Math.max(30000,Number(CFG.pollMs)||30000);pollTimer=setInterval(()=>checkRevision(),Math.min(poll,12000));
+ if(pollTimer)clearInterval(pollTimer);const poll=Math.max(30000,Number(CFG.pollMs)||30000);pollTimer=setInterval(()=>checkRevision(),poll);
  window.addEventListener('dcm-master-authenticated',()=>{if(masterPassword()){retireSession();signedIn=true;serverReady=true;renderLoginUI();updateEditAccess();void pullRemote(true);}});
  window.addEventListener('dcm-master-logged-out',()=>{if(editor()==='배영훈')logoutSync('마스터 모드가 종료되었습니다.');});
- document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastPullAt>poll)pullRemote(false);});
+ document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&Date.now()-lastPullAt>poll)void checkRevision();});
+ window.addEventListener('online',()=>{revisionRetryAt=0;void checkRevision();});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(start,100),{once:true});else setTimeout(start,100);
 window.DCMActionSync={pull:()=>pullRemote(true),push:()=>flushPendingEdits(),pushRisk:()=>pushRiskSnapshot(true),allRisk:()=>allRiskRows(),srmRows:()=>getData(),srmActions:()=>getLocalActions(),canEditFor,editorName:()=>editor(),isConnected:()=>signedIn,srmRequest:payload=>post({...payload,actor:editor()}),reasons:REASONS};

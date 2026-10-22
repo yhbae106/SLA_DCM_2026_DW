@@ -18,7 +18,7 @@ const required=['manager','outlet','month','fileInput','kpiRate','ctRate','ctAct
 for(const id of required)if(!html.includes('id="'+id+'"'))fail('Missing required DOM id: '+id);
 if(html.includes('id="ctActionEntity"'))fail('Redundant Action Board group-company filter returned');
 ok('required dashboard DOM contract');
-const unifiedHeader=html.match(/<div class="table-scroll ct-board"><table><thead><tr>(.*?)<\/tr>/)?.[1]||'';
+const unifiedHeader=html.match(/<div class="table-scroll ct-board"[^>]*><table><thead><tr>(.*?)<\/tr>/)?.[1]||'';
 if((unifiedHeader.match(/<th/g)||[]).length!==10||unifiedHeader.includes('완료 예정일'))fail('Master Action Board must have 10 visible columns without due date');
 const actionLayout=read('control-tower-layout.css');
 if(!actionLayout.includes('table-layout:fixed')||!actionLayout.includes('overflow-x:hidden')||!actionLayout.includes('@media(max-width:1180px)'))fail('Master Action Board must fit width and provide responsive cards');
@@ -233,3 +233,5 @@ if(!liveAPI.includes("type === 'health'"))fail('Public endpoint health probe mis
 if(!liveAPI.includes("loadPartnerDashboardData_(partner)"))fail('Partner dataset fetch route missing');
 ok('POST Action sync, 404 recovery and fast/batch API contracts');
 console.log('HARNESS_OK');
+
+await import('./polling-regression.mjs');
