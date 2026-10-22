@@ -67,7 +67,8 @@ ok('core DCM calculations');
 const localAssets=[...new Set(refs)].filter(exists);
 const initialBytes=fs.statSync('index.html').size+localAssets.reduce((s,p)=>s+fs.statSync(p).size,0);
 // Reliability baseline: 586098 bytes. Operational scope, safe CSV and SRM navigation remain dependency-free within 600KB.
-if(initialBytes>600000)fail('Initial local payload budget exceeded: '+initialBytes);
+// Install UI, manifest and home-screen icon: allow at most 16 KB extra, no library dependency.
+if(initialBytes>616000)fail('Initial local payload budget exceeded: '+initialBytes);
 ok('initial local payload '+Math.round(initialBytes/1024)+' KB');
 
 const expectedKpiOrder=['ctRate','ctDelta','ctX','ctNeedAbs','ctPersist','ctAll3','ctX2O','ctO2X','ctSupply'];
@@ -235,3 +236,5 @@ ok('POST Action sync, 404 recovery and fast/batch API contracts');
 console.log('HARNESS_OK');
 
 await import('./polling-regression.mjs');
+
+await import('./pwa-regression.mjs');
