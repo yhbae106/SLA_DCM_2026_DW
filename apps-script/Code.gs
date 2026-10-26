@@ -43,9 +43,6 @@ function doPost(e) {
       assertMasterPassword_(body.password);
       return json_({ok:true, ...loadDashboardData_()});
     }
-    if (body.type === 'dashboardShared') {
-      return json_({ok:true, ...loadDashboardData_()});
-    }
     if (body.type === 'partnerLogin' || body.type === 'partnerDashboard') {
       const partner = normalizePartner_(body.partner);
       assertPartnerPassword_(partner, body.password);
